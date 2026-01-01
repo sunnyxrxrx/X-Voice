@@ -321,6 +321,7 @@ def load_dataset(
     mel_spec_kwargs: dict = dict(),
     speed_type: Literal["phonemes", "syllables", "words"] = "syllables",
     split: str = "train",
+    silence_prob: float = 0.6
 ) -> CustomDataset | HFDataset:
     """
     dataset_type    - "CustomDataset" if you want to use tokenizer name and default data path to load for train_dataset
@@ -352,6 +353,7 @@ def load_dataset(
             mel_spec_module=mel_spec_module,
             speed_type=speed_type,
             split=split,
+            silence_prob=silence_prob,
             **mel_spec_kwargs,
         )
 
@@ -365,7 +367,7 @@ def load_dataset(
             data_dict = json.load(f)
         durations = data_dict["duration"]
         train_dataset = CustomDataset(
-            train_dataset, durations=durations, preprocessed_mel=preprocessed_mel, split=split, **mel_spec_kwargs
+            train_dataset, durations=durations, preprocessed_mel=preprocessed_mel, split=split, silence_prob=silence_prob, **mel_spec_kwargs
         )
 
     elif dataset_type == "HFDataset":
