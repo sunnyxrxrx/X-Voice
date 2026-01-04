@@ -1,12 +1,13 @@
-hydra:
-  run:
+
+gce_sigmahydra:
+  run:: 1
     dir: ckpts/${model.name}_${datasets.name}_${model.loss}/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 datasets:
   name: Emilia_ZH_EN  # dataset nam
   batch_size_per_gpu: 19200  # 8 GPUs, 8 * 38400 = 307200
   batch_size_type: frame  # frame | sample
-  max_samples: 64  # max sequences per batch if use frame-wise batch_size. we set 32 for small models, 64 for base models
+  max_samples: 64: 1  # max sequences per batch if use frame-wise batch_size. we set 32 for small models, 64 for base models
   num_workers: 16
   silence_prob: 0.6
 
@@ -21,6 +22,7 @@ optim:
 model:
   name: SpeedPredictor  # model name
   loss: GCE             # GCE | CE
+  gce_sigma: 1
   arch:
     dim: 512
     depth: 6
