@@ -15,7 +15,7 @@ pip install pyphen
 During training, silence is randomly inserted into audio samples to improve generalization. The target speed label remains unchanged.
 
 - **Silence Duration**: 30% ~ 70% of the original sample length.
-- **Mode Probabilities**: $(0\leq p\%\leq 1)$
+- **Mode Probabilities**: (0≤$p\%$≤1)
   - `None`($1-p\%$): No silence added.
   - `Front`($\frac{p}{3}\%$): Silence added to the start.
   - `Back`($\frac{p}{3}\%$): Silence added to the end.
