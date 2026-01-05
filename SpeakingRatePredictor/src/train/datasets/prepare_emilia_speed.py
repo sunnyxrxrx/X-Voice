@@ -15,7 +15,6 @@ from datasets.arrow_writer import ArrowWriter
 from model.utils import repetition_found
 
 SEC_PER_HOUR = 3600
-DNSMOS_THRESHOLD = 3.4
 
 out_zh = {
     "ZH_B00041_S06226",
@@ -125,6 +124,24 @@ def count_syllables(text):
                 
     return total_syllables
 
+def check_valid_chars(input_str):
+    valid_punctuation = '\'",.?!;。，'
+    for c in input_str:
+        # Check if it's a Latin letter (including uppercase and lowercase)
+        if c.isalpha() and ord(c) <= 127:
+            continue
+        # Check if it's a Chinese character
+        if '\u3100' <= c <= '\u9fff':
+            continue
+        # Check if it's a specified punctuation mark
+        if c in valid_punctuation:
+            continue
+        if c == ' ':
+            continue
+        return False
+        
+    return True
+
 def process_speed(audio_jsonl, output_path, total_duration, max_duration):
     judge = False
     results = []
@@ -133,11 +150,11 @@ def process_speed(audio_jsonl, output_path, total_duration, max_duration):
         lines = f.readlines()
         for line in lines:
             obj = json.loads(line)
-            if obj["dnsmos"] <= DNSMOS_THRESHOLD:
-                continue
             duration = obj["duration"]
             text = obj["text"]
             obj["speed_syllables"] = map_to_class(count_syllables(text) / duration)
+            if not check_valid_chars(text) or duration < 2.4:
+                continue
             total_duration += duration
             results.append(obj)
             if total_duration > max_duration:
@@ -160,11 +177,11 @@ def process_speed_val(audio_jsonl, output_path, val_sample_num):
         lines = f.readlines()
         for line in lines:
             obj = json.loads(line)
-            if obj["dnsmos"] <= DNSMOS_THRESHOLD:
-                continue
             duration = obj["duration"]
             text = obj["text"]
             obj["speed_syllables"] = map_to_class(count_syllables(text) / duration)
+            if not check_valid_chars(text) or (duration < 2.4 or duration > 10):
+                continue
             total_num += 1
             results.append(obj)
             if total_num >= val_sample_num:
@@ -314,11 +331,11 @@ def main():
 
 if __name__ == "__main__":
     # 500 * 2 = 1000h
-    MAX_DURATION_HOURS = 500 # The total duration of the dataset for each language in hours.
+    MAX_DURATION_HOURS = 5 # 500 The total duration of the dataset for each language in hours.
     VAL_SAMPLE_NUM = 250
     MAX_WORKERS = 32
     LANGS = ["ZH", "EN"]
-    DATASET_DIR = "/hpc_stor03/public/shared/data/tts/Emilia_Dataset/raw"
+    DATASET_DIR = "<SOME_PATH>/Emilia_Dataset/raw"
     TMP_DIR = str(Path(__file__).parent.parent.parent.parent / "Speed_Emilia_use")
     DATASET_NAME = f"Emilia_{'_'.join(LANGS)}_speed"
     FINAL_SAVE_DIR = str(Path(__file__).parent.parent.parent.parent / "data" / DATASET_NAME)
