@@ -1,0 +1,1 @@
+The pretrained model checkpoints can be reached at https://huggingface.co/QingyuLiu1/Cross-Lingual_F5-TTS.
