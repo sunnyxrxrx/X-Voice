@@ -1,0 +1,9 @@
+python get_trainset.py --dataset lemas --language de --write_duration
+python get_trainset.py --dataset lemas --language fr --write_duration
+python get_trainset.py --dataset lemas --language es --write_duration
+python get_trainset.py --dataset lemas --language it --write_duration
+python get_trainset.py --dataset lemas --language pt --write_duration
+python get_trainset.py --dataset lemas --language vi --write_duration
+python get_trainset.py --dataset lemas --language id --write_duration
+python get_trainset.py --dataset lemas --language zh --write_duration
+python get_trainset.py --dataset lemas --language en --write_duration

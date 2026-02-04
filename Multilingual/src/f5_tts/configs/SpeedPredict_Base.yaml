@@ -1,0 +1,49 @@
+gce_sigmahydra:
+  run: 
+    dir: ckpts/${model.name}_${datasets.name}_${model.loss}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+datasets:
+  name: Emilia_ZH_EN  # dataset nam
+  batch_size_per_gpu: 19200  # 8 GPUs, 8 * 38400 = 307200
+  batch_size_type: frame  # frame | sample
+  max_samples: 64  # max sequences per batch if use frame-wise batch_size. we set 32 for small models, 64 for base models
+  num_workers: 16
+  silence_prob: 0.6
+
+optim:
+  epochs: 100
+  learning_rate: 2.5e-4
+  num_warmup_updates: 7500  # warmup updates
+  grad_accumulation_steps: 1  # note: updates = steps / grad_accumulation_steps
+  max_grad_norm: 1.0  # gradient clipping
+  bnb_optimizer: False  # use bnb 8bit AdamW optimizer or not
+
+model:
+  name: SpeedPredictor  # model name
+  loss: GCE             # GCE | CE
+  gce_sigma: 1
+  arch:
+    dim: 512
+    depth: 6
+    heads: 8
+    ff_mult: 4
+    qk_norm: null  # null | rms_norm
+    pe_attn_head: null
+  mel_spec:
+    target_sample_rate: 24000
+    n_mel_channels: 100
+    hop_length: 256
+    win_length: 1024
+    n_fft: 1024
+    mel_spec_type: vocos  # vocos | bigvgan
+
+ckpts:
+  logger: wandb  # wandb | tensorboard | null
+  log_samples: True  # infer random sample per save checkpoint. wip, normal to fail with extra long samples
+  save_per_updates: 2000  # save checkpoint per updates
+  keep_last_n_checkpoints: -1  # -1 to keep all, 0 to not save intermediate, > 0 to keep last N checkpoints
+  last_per_updates: 2000 # 5000  # save last checkpoint per updates
+  save_dir: ckpts/${model.name}_${datasets.name}_${model.loss}
+
+eval:
+  allowed_error: 0.15

@@ -1,0 +1,12 @@
+pytest-runner
+openai-whisper
+onnxruntime-gpu
+addict
+simplejson
+modelscope
+num2words
+nemo_text_processing
+WeTextProcessing 
+xphonebr 
+german-transliterate 
+compound-split
