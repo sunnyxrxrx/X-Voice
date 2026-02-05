@@ -31,7 +31,15 @@ python src/f5_tts/train/datasets/prepare_ipa.py --tokenizer ipa_v3 --dataset_nam
 
 - 将``src/f5_tts/model/dataset.py``的``root_dir``改到metadata所在的目录
 
-使用bf16训练
+- 使用bf16训练
+
+- ckpt参见 https://huggingface.co/XRXRX/Multilingual-F5-TTS ，配置可以参考config中对应名字的文件
+  - v4: fp16训练，全局时间concat注入，scale到约500M，rmsnorm，swiglu
+  - v5: bf16训练，全局时间concat注入
+  - tkcat: bf16训练，逐token concat注入，没有加入drop的逻辑
+  - langipa: bf16训练，ipa加后缀的形式注入
+  - tkncatv2: bf16训练，在tkncat基础上，调整初始化，并加入随机丢弃language id，概率0.2(待更新)
+
 ## 测试集的准备
 ```
 python get_testset_sample10.py
