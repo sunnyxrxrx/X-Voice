@@ -30,11 +30,19 @@ lang = sys.argv[3] # zh or en
 
 device = "cuda" if torch.cuda.is_available() else 'cpu'
 
-def load_en_model():
-    model_id = "large-v3"
-    print(f"[INFO] Using asr model: {model_id}")
-    model = whisper.load_model(model_id).to(device)
-    model.eval()
+def load_en_model(faster=False):
+   
+    if faster:
+        from faster_whisper import WhisperModel
+
+        model_id = "large-v3" 
+        print(f"[INFO] Using asr model: faster whisper {model_id}")
+        model = WhisperModel(model_id, device="cuda", compute_type="float16")
+    else:
+        model_id = "large-v3"
+        print(f"[INFO] Using asr model: whisper {model_id}")
+        model = whisper.load_model(model_id).to(device)
+        model.eval()
     return model
 
 def load_zh_model():
@@ -82,12 +90,11 @@ def process_one(hypo, truth, normalizer):
     return (truth, hypo, wer, subs, dele, inse)
 
 
-def run_asr(wav_res_text_path, res_path, normalize_text=False):
+def run_asr(wav_res_text_path, res_path, normalize_text=False, faster=False):
     if lang[-2:] in ["zh", "hard_zh"]:
         model = load_zh_model()
-        # model = load_en_model() # 统一用whisper
     else:
-        model = load_en_model()
+        model = load_en_model(faster)
 
     params = []
     for line in open(wav_res_text_path).readlines():
@@ -119,8 +126,15 @@ def run_asr(wav_res_text_path, res_path, normalize_text=False):
                         batch_size_s=300)
                 transcription = res[0]["text"]
             else:
-                result = model.transcribe(wav_res_path, language=lang[-2:])
-                transcription = result["text"].strip()
+                if faster:
+                    segments, _ = model.transcribe(wav_res_path, beam_size=5, language=lang[-2:])
+                    transcription = ""
+                    for segment in segments:
+                        transcription = transcription + " " + segment.text
+                else:
+                    result = model.transcribe(wav_res_path, language=lang[-2:])
+                    transcription = result["text"].strip()
+                
         except Exception as e:
             print(e)
             continue
@@ -131,5 +145,6 @@ def run_asr(wav_res_text_path, res_path, normalize_text=False):
         fout.write(f"{wav_res_path}\t{wer}\t{raw_truth}\t{raw_hypo}\t{inse}\t{dele}\t{subs}\n")
         fout.flush()
 
-run_asr(wav_res_text_path, res_path, normalize_text=True)
+run_asr(wav_res_text_path, res_path, normalize_text=True, faster=True)
+
 

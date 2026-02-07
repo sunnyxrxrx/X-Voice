@@ -10,3 +10,4 @@ WeTextProcessing
 xphonebr 
 german-transliterate 
 compound-split
+ctranslate2==4.5.0

@@ -18,6 +18,7 @@ decode_dir="${cv3_dir}/${task}"
 
 apt-get install -y sox libsox-dev 
 pip install -r requirements.txt
+export LD_LIBRARY_PATH=/opt/conda/lib/python3.11/site-packages/torch/lib:$LD_LIBRARY_PATH
 
 SPK_LAB=utils/3D-Speaker
 DNSMOS_LAB=utils/DNSMOS

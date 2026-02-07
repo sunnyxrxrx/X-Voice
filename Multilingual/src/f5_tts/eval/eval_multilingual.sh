@@ -20,6 +20,7 @@ accelerate launch src/f5_tts/eval/eval_infer_batch.py -s 0 -n ${exp_name} -c ${c
 apt-get install -y sox libsox-dev 
 cd "$SCRIPT_DIR"
 pip install -r requirements.txt
+export LD_LIBRARY_PATH=/opt/conda/lib/python3.11/site-packages/torch/lib:$LD_LIBRARY_PATH
 
 
 DNSMOS_LAB=utils/DNSMOS
