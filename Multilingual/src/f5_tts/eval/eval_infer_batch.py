@@ -99,7 +99,7 @@ def main():
         "th":"thai", "id":"indonesian", "vi":"vietnamese", 
         "zh":"chinese", "en":"english",
         "de":"german", "fr":"french", "es":"spanish", "pl":"polish", "it":"italian", "nl":"dutch", "pt":"portuguese",
-        "ko":"korean",
+        "ko":"korean", "ja":"japanese", "ru":"russian",
         "ro":"romanian","hu":"hungarian","cs":"czech","fi":"finnish","hr":"croatian","sk":"slovak","sl":"slovenian","et":"estonian",
         "lt":"lthuanian","bg":"bulgarian","el":"greek","lv":"latvian","mt":"maltese","sv":"swedish","da":"danish",
     }
@@ -211,11 +211,11 @@ def main():
     else:
         ckpt_path = rel_path + f"/{model_cfg.ckpts.save_dir}/model_{ckpt_step}.pt"
     print(f"Loading checkpoint from: {ckpt_path}")
-    dtype = torch.float32 if mel_spec_type == "bigvgan" else None
-    model = load_checkpoint(model, ckpt_path, device, dtype=dtype, use_ema=use_ema)
+    model = load_checkpoint(model, ckpt_path, device, use_ema=use_ema)
     # model = accelerator.prepare(model)
     
     lang_to_id = model.transformer.lang_to_id
+    infill_lang_type = model.transformer.infill_lang_type
     tokenizer_class_map = {
         "ipa": PhonemizeTextTokenizer,
         "ipa_v2": PhonemizeTextTokenizer_v2,
@@ -326,7 +326,7 @@ def main():
                 
                 batch_lang_ids = []
                 for r_len, g_len in zip(ref_text_lens, gen_text_lens):
-                    if cross_lingual:
+                    if cross_lingual and infill_lang_type in ["token_concat", "ada"]:
                         # 法一
                         ids = [ref_language_idx] * r_len + [in_language_idx] * g_len
                         # 法二
@@ -334,10 +334,13 @@ def main():
                         # 法三
                         # unk_idx = len(lang_to_id)
                         # ids = [unk_idx] * r_len + [in_language_idx] * g_len
-                    else:
+                    else: # 非cross-lingual (cross-lingual 的 add_only 或 time concat 后面处理)
                         ids = [in_language_idx] * r_len + [in_language_idx] * g_len
                     batch_lang_ids.append(torch.tensor(ids))
                 lang_ids_tensor = pad_sequence(batch_lang_ids, batch_first=True, padding_value=0).to(device)
+                
+                if infill_lang_type in ["add_only", "concat"]: # 如果使用add_only 或 concat，只能用之前的版本传入目标语言字符串
+                    lang_ids_tensor = [in_language]
                 
                 with torch.inference_mode():
                     generated, _ = model.sample(
