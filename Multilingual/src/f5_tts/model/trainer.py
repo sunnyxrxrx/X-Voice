@@ -55,6 +55,8 @@ class Trainer:
         is_local_vocoder: bool = False,  # use local path vocoder
         local_vocoder_path: str = "",  # local vocoder path
         model_cfg_dict: dict = dict(),  # training config
+        pretrained_path: str = None,
+        freeze_update: int | None = None,
     ):
         ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
 
@@ -142,6 +144,10 @@ class Trainer:
         else:
             self.optimizer = AdamW(model.parameters(), lr=learning_rate)
         self.model, self.optimizer = self.accelerator.prepare(self.model, self.optimizer)
+        
+        self.pretrained_path = pretrained_path
+        self.freeze = False
+        self.freeze_update = freeze_update
 
     @property
     def is_main(self):
@@ -184,14 +190,44 @@ class Trainer:
 
     # 首先会寻找model_last.pt，没有就寻找最新带编号的节点
     def load_checkpoint(self):
-        if (
-            not exists(self.checkpoint_path)
-            or not os.path.exists(self.checkpoint_path)
-            or not any(filename.endswith((".pt", ".safetensors")) for filename in os.listdir(self.checkpoint_path))
-        ):
-            return 0
-
         self.accelerator.wait_for_everyone()
+        has_checkpoint = False
+        if exists(self.checkpoint_path) and os.path.exists(self.checkpoint_path):
+             if any(f.startswith("model_") for f in os.listdir(self.checkpoint_path)):
+                 has_checkpoint = True
+        # 没有任何自己的断点，尝试加载官方预训练
+        if not has_checkpoint and self.pretrained_path and os.path.exists(self.pretrained_path):
+            if self.is_main:
+                print(f"\n[Transfer Learning] No local checkpoint found. Loading from: {self.pretrained_path}")
+            if self.pretrained_path.endswith(".safetensors"):
+                from safetensors.torch import load_file
+                checkpoint = load_file(self.pretrained_path, device="cpu")
+            else:
+                checkpoint = torch.load(self.pretrained_path, map_location="cpu")
+                if "model_state_dict" in checkpoint: checkpoint = checkpoint["model_state_dict"]
+                if "ema_model_state_dict" in checkpoint: checkpoint = checkpoint["ema_model_state_dict"]
+
+            model_obj = self.accelerator.unwrap_model(self.model)
+            model_dict = model_obj.state_dict()
+            filtered_dict = {}
+            for k, v in checkpoint.items():
+                clean_k = k.replace("ema_model.", "")
+                if clean_k in model_dict and v.shape == model_dict[clean_k].shape:
+                    print(f"will load {clean_k}")
+                    filtered_dict[clean_k] = v
+            # 加载到主模型
+            model_obj.load_state_dict(filtered_dict, strict=False)
+            # 加载到 Trainer 的 EMA 模型 (确保同步)
+            if self.is_main:
+                self.ema_model.ema_model.load_state_dict(filtered_dict, strict=False)
+            
+            if self.is_main:
+                print(f"Successfully inherited {len(filtered_dict)} layers from backbone.\n")
+            self.freeze = True
+            return 0 # 从 0 步开始练
+
+
+        
         if "model_last.pt" in os.listdir(self.checkpoint_path):
             latest_checkpoint = "model_last.pt"
         else:
@@ -343,6 +379,15 @@ class Trainer:
         # 默认是恢复训练的
         start_update = self.load_checkpoint()
         global_update = start_update
+        
+        if self.freeze and self.freeze_update is not None and global_update < self.freeze_update:
+            if self.is_main:
+                print(f"Updates {global_update} < {self.freeze_update}: Freezing DiT blocks...")
+            model_inner = self.accelerator.unwrap_model(self.model)
+            for name, param in model_inner.named_parameters():
+                # 冻结 Transformer 主干，只留 text_embed 和新加的层进行热身训练
+                if "transformer_blocks" in name:
+                    param.requires_grad = False
 
         if exists(resumable_with_seed):
             orig_epoch_step = len(train_dataloader)
@@ -375,6 +420,16 @@ class Trainer:
             )
 
             for batch in current_dataloader:
+                if  self.freeze and self.freeze_update is not None and global_update == self.freeze_update:
+                    self.accelerator.wait_for_everyone()
+                    if self.is_main:
+                        print(f"\nUnfreezing DiT backbone for full training.")
+                    model_inner = self.accelerator.unwrap_model(self.model)
+                    for name, param in model_inner.named_parameters():
+                        if "transformer_blocks" in name:
+                            param.requires_grad = True
+                            print(f"set requires_grad of {name} to True")
+                    self.freeze = False
                 with self.accelerator.accumulate(self.model):
                     text_inputs = batch["text"]
                     mel_spec = batch["mel"].permute(0, 2, 1)
