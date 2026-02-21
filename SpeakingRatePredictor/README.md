@@ -14,15 +14,14 @@ pip install pyphen
 ## Data Augmentation: Silence Injection
 During training, silence is randomly inserted into audio samples to improve generalization. The target speed label remains unchanged.
 
-- **Silence Duration**: 30% ~ 70% of the original sample length.
-- **Mode Probabilities**: ($0\leq p\leq1$)
-  - `None`($1-p\%$): No silence added.
-  - `Front`($\frac{p}{3}\%$): Silence added to the start.
-  - `Back`($\frac{p}{3}\%$): Silence added to the end.
-  - `Both`($\frac{p}{3}\%$): Silence added to both start and end.
+- **Batch-Level Gate**: with probability `1 - p`, the whole batch gets no silence; with probability `p`, the whole batch gets silence.
+- **Shared Silence Length**: when enabled, one silence ratio is sampled from `silence_ratio_min ~ silence_ratio_max` (default `0.2 ~ 0.8`) and converted to a shared frame count `sil_len` using the longest sample length in the batch.
+- **Per-Sample Placement** (continuous random split):
+  - For each sample, draw an integer `front_len` uniformly from `[0, sil_len]`, then set `back_len = sil_len - front_len`.
+  - Silence is added as `front_len` at the start and `back_len` at the end, so total injected frames per sample is always `sil_len`.
 
 ## Using the Speaking Rate Predictor to Evaluate F5-TTS
-The script for predicting duration using the Speaking Rate Predictor to assist F5-TTS inference has been uploaded to my forked repository: [QingyuLiu0521/F5-TTS/src/f5_tts/eval/eval_infer_batch_droptext_sp.py](https://github.com/QingyuLiu0521/F5-TTS/blob/c11cb40706d90f713dc93b297cc72f8d73edfa16/src/f5_tts/eval/eval_infer_batch_droptext_sp.py).
+The script for predicting duration using the Speaking Rate Predictor to assist F5-TTS inference has been uploaded to the forked repository: [QingyuLiu0521/F5-TTS/src/f5_tts/eval/eval_infer_batch_droptext_sp.py](https://github.com/QingyuLiu0521/F5-TTS/blob/c11cb40706d90f713dc93b297cc72f8d73edfa16/src/f5_tts/eval/eval_infer_batch_droptext_sp.py).
 
 ### Example Usage:
 ```bash

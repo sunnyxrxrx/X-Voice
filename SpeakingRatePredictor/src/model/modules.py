@@ -547,14 +547,14 @@ class GaussianCrossEntropyLoss(nn.Module):
         # gt
         centers = y_true.unsqueeze(-1)  # shape: [b, 1]
         
-        # 位置索引
+        # position index
         positions = torch.arange(self.num_classes, device=device).float()  # shape: [num_classes]
         positions = positions.expand(y_true.shape[0], -1)  # shape: [b, num_classes]
         
         # sigma
         sigma = self.sigma_factor * torch.ones_like(y_true, device=device).float()
         
-        # 高斯分布
+        # gaussian distribution
         diff = positions - centers  # (c-gt).shape: [b, num_classes]
         y_true_soft = torch.exp(-(diff.pow(2) / (2 * sigma.pow(2).unsqueeze(-1))))  # shape: [b, num_classes]
         

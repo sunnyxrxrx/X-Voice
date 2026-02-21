@@ -376,8 +376,8 @@ class Trainer:
                         self.writer.add_scalar("lr", self.scheduler.get_last_lr()[0], global_update)
 
                 # ----test----
-                self.save_checkpoint(global_update)
-                self.validate(global_update, val_dataset, log_validation_path)
+                # self.save_checkpoint(global_update)
+                # self.validate(global_update, val_dataset, log_validation_path)
                 # ----test----
 
                 if global_update % self.save_per_updates == 0 and self.accelerator.sync_gradients:

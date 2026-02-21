@@ -102,7 +102,6 @@ class CustomDataset(Dataset):
         mel_spec_module: nn.Module | None = None,
         speed_type="syllables",
         split="train",
-        silence_prob=0.6
     ):
         self.data = custom_dataset
         self.durations = durations
@@ -114,7 +113,6 @@ class CustomDataset(Dataset):
         self.preprocessed_mel = preprocessed_mel
         self.speed_type = speed_type
         self.split = split
-        self.silence_prob = silence_prob
         num_classes_map = {
             "phonemes": 72,
             "syllables": 32,
@@ -174,38 +172,6 @@ class CustomDataset(Dataset):
                 resampler = torchaudio.transforms.Resample(source_sample_rate, self.target_sample_rate)
                 audio = resampler(audio)
 
-            if self.split == "train":
-                # Random probability for augmentation case
-                prob = torch.rand(1).item()
-                silence_threshold = 1.0 - self.silence_prob # (Default) 1 - 0.6 = 0.4
-                
-                # (Default) 40% probability: Do nothing (0.0 <= prob < 0.4)
-                if prob >= silence_threshold:
-                    original_len = audio.shape[-1]
-                    # Random silence length between 20% and 80% of original length
-                    sil_ratio = torch.empty(1).uniform_(0.2, 0.8).item()
-                    total_sil_len = int(original_len * sil_ratio)
-                    
-                    segment_step = self.silence_prob / 3.0              # (Default) 0.2
-                    limit_front = silence_threshold + segment_step      # (Default) 0.6
-                    limit_back = silence_threshold + (2 * segment_step) # (Default) 0.8                
-                    
-                    if silence_threshold <= prob < limit_front:
-                        # (Default) 20%: Only Front
-                        silence = torch.zeros((audio.shape[0], total_sil_len), device=audio.device)
-                        audio = torch.cat((silence, audio), dim=-1)
-                        
-                    elif limit_front <= prob < limit_back:
-                        # (Default) 20%: Only Back
-                        silence = torch.zeros((audio.shape[0], total_sil_len), device=audio.device)
-                        audio = torch.cat((audio, silence), dim=-1)
-                        
-                    else:
-                        # (Default) 20%: Both Front and Back (0.8 <= prob <= 1.0)
-                        sil_front = torch.zeros((audio.shape[0], total_sil_len), device=audio.device)
-                        sil_back = torch.zeros((audio.shape[0], total_sil_len), device=audio.device)
-                        audio = torch.cat((sil_front, audio, sil_back), dim=-1)
-
             # to mel spectrogram
             mel_spec = self.mel_spectrogram(audio)
             mel_spec = mel_spec.squeeze(0)  # '1 d t -> d t'
@@ -226,7 +192,6 @@ def load_dataset(
     mel_spec_kwargs: dict = dict(),
     speed_type: Literal["phonemes", "syllables", "words"] = "syllables",
     split: str = "train",
-    silence_prob: float = 0.6
 ) -> CustomDataset | HFDataset:
     """
     dataset_type    - "CustomDataset" if you want to use tokenizer name and default data path to load for train_dataset
@@ -258,7 +223,6 @@ def load_dataset(
             mel_spec_module=mel_spec_module,
             speed_type=speed_type,
             split=split,
-            silence_prob=silence_prob,
             **mel_spec_kwargs,
         )
 
@@ -272,7 +236,7 @@ def load_dataset(
             data_dict = json.load(f)
         durations = data_dict["duration"]
         train_dataset = CustomDataset(
-            train_dataset, durations=durations, preprocessed_mel=preprocessed_mel, split=split, silence_prob=silence_prob, **mel_spec_kwargs
+            train_dataset, durations=durations, preprocessed_mel=preprocessed_mel, split=split, **mel_spec_kwargs
         )
 
     elif dataset_type == "HFDataset":
@@ -284,7 +248,6 @@ def load_dataset(
         train_dataset = HFDataset(
             load_dataset(f"{pre}/{pre}", split=f"train.{post}", cache_dir=str(DATA_DIR)),
         )
-    print(f"\nSucceed.")
     return train_dataset
 
 def count(text):
