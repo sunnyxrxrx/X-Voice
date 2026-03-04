@@ -57,6 +57,7 @@ class Trainer:
         model_cfg_dict: dict = dict(),  # training config
         pretrained_path: str = None,
         freeze_update: int | None = None,
+        continue_training: bool | None = None,
     ):
         ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
 
@@ -69,6 +70,14 @@ class Trainer:
             kwargs_handlers=[ddp_kwargs],
             gradient_accumulation_steps=grad_accumulation_steps,
             **accelerate_kwargs,
+        )
+        print(
+            f"🔍 [验证 DDP] "
+            f"进程PID: {os.getpid()} | "
+            f"当前卡号(Local Rank): {self.accelerator.local_process_index} | "
+            f"全局编号(Global Rank): {self.accelerator.process_index} | "
+            f"总进程数(World Size): {self.accelerator.num_processes} | "
+            f"是否为主进程: {self.accelerator.is_main_process}"
         )
 
         self.logger = logger
@@ -142,12 +151,14 @@ class Trainer:
 
             self.optimizer = bnb.optim.AdamW8bit(model.parameters(), lr=learning_rate)
         else:
-            self.optimizer = AdamW(model.parameters(), lr=learning_rate)
+            print("set AdamW fused to True")
+            self.optimizer = AdamW(model.parameters(), lr=learning_rate, fused=True)
         self.model, self.optimizer = self.accelerator.prepare(self.model, self.optimizer)
         
         self.pretrained_path = pretrained_path
         self.freeze = False
         self.freeze_update = freeze_update
+        self.continue_training = continue_training
 
     @property
     def is_main(self):
@@ -193,39 +204,46 @@ class Trainer:
         self.accelerator.wait_for_everyone()
         has_checkpoint = False
         if exists(self.checkpoint_path) and os.path.exists(self.checkpoint_path):
-             if any(f.startswith("model_") for f in os.listdir(self.checkpoint_path)):
-                 has_checkpoint = True
+             if any(filename.endswith((".pt", ".safetensors")) for filename in os.listdir(self.checkpoint_path)):
+                has_checkpoint = True
         # 没有任何自己的断点，尝试加载官方预训练
-        if not has_checkpoint and self.pretrained_path and os.path.exists(self.pretrained_path):
-            if self.is_main:
-                print(f"\n[Transfer Learning] No local checkpoint found. Loading from: {self.pretrained_path}")
-            if self.pretrained_path.endswith(".safetensors"):
-                from safetensors.torch import load_file
-                checkpoint = load_file(self.pretrained_path, device="cpu")
+        if not has_checkpoint:
+            if self.pretrained_path and os.path.exists(self.pretrained_path):
+                if self.is_main:
+                    if self.continue_training:
+                        print(f"\n[Continue Training] No local checkpoint found. Loading from: {self.pretrained_path}")
+                    else:
+                        print(f"\n[Transfer Learning] No local checkpoint found. Loading from: {self.pretrained_path}")
+                if self.pretrained_path.endswith(".safetensors"):
+                    from safetensors.torch import load_file
+                    checkpoint = load_file(self.pretrained_path, device="cpu")
+                else:
+                    checkpoint = torch.load(self.pretrained_path, map_location="cpu")
+                    if "model_state_dict" in checkpoint: checkpoint = checkpoint["model_state_dict"]
+                    if "ema_model_state_dict" in checkpoint: checkpoint = checkpoint["ema_model_state_dict"]
+
+                model_obj = self.accelerator.unwrap_model(self.model)
+                model_dict = model_obj.state_dict()
+                filtered_dict = {}
+                for k, v in checkpoint.items():
+                    clean_k = k.replace("ema_model.", "")
+                    if clean_k in model_dict and v.shape == model_dict[clean_k].shape:
+                        if self.is_main:
+                            print(f"will load {clean_k}")
+                        filtered_dict[clean_k] = v
+                # 加载到主模型
+                model_obj.load_state_dict(filtered_dict, strict=False)
+                # 加载到 Trainer 的 EMA 模型 (确保同步)
+                if self.is_main:
+                    self.ema_model.ema_model.load_state_dict(filtered_dict, strict=False)
+                
+                if self.is_main:
+                    print(f"Successfully inherited {len(filtered_dict)} layers from backbone.\n")
+                if not self.continue_training:
+                    self.freeze = True
+                return 0 # 从 0 步开始练
             else:
-                checkpoint = torch.load(self.pretrained_path, map_location="cpu")
-                if "model_state_dict" in checkpoint: checkpoint = checkpoint["model_state_dict"]
-                if "ema_model_state_dict" in checkpoint: checkpoint = checkpoint["ema_model_state_dict"]
-
-            model_obj = self.accelerator.unwrap_model(self.model)
-            model_dict = model_obj.state_dict()
-            filtered_dict = {}
-            for k, v in checkpoint.items():
-                clean_k = k.replace("ema_model.", "")
-                if clean_k in model_dict and v.shape == model_dict[clean_k].shape:
-                    print(f"will load {clean_k}")
-                    filtered_dict[clean_k] = v
-            # 加载到主模型
-            model_obj.load_state_dict(filtered_dict, strict=False)
-            # 加载到 Trainer 的 EMA 模型 (确保同步)
-            if self.is_main:
-                self.ema_model.ema_model.load_state_dict(filtered_dict, strict=False)
-            
-            if self.is_main:
-                print(f"Successfully inherited {len(filtered_dict)} layers from backbone.\n")
-            self.freeze = True
-            return 0 # 从 0 步开始练
-
+                return 0
 
         
         if "model_last.pt" in os.listdir(self.checkpoint_path):
@@ -259,7 +277,8 @@ class Trainer:
             checkpoint = torch.load(
                 f"{self.checkpoint_path}/{latest_checkpoint}", weights_only=True, map_location="cpu"
             )
-        print(f"Loading checkpoint from: {self.checkpoint_path}/{latest_checkpoint}")
+        if self.is_main:
+            print(f"Loading checkpoint from: {self.checkpoint_path}/{latest_checkpoint}")
         # patch for backward compatibility, 305e3ea
         for key in ["ema_model.mel_spec.mel_stft.mel_scale.fb", "ema_model.mel_spec.mel_stft.spectrogram.window"]:
             if key in checkpoint["ema_model_state_dict"]:
@@ -282,14 +301,7 @@ class Trainer:
                     del checkpoint["model_state_dict"][key]
 
             self.accelerator.unwrap_model(self.model).load_state_dict(checkpoint["model_state_dict"])
-            #print("警告！ 将重新加载学习率调度器和优化器，否则请取消注释！")
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-            # for group in self.optimizer.param_groups:
-            #     # betas 元组 (beta1, beta2)
-            #     beta1, old_beta2 = group['betas']
-            #     new_beta2 = 0.95  
-            #     group['betas'] = (beta1, new_beta2)
-            # print(f"警告！ 将修改优化器状态。成功恢复优化器状态，并将 beta2 从 {old_beta2} 修改为 {new_beta2}")
             if self.scheduler:
                 self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
             update = checkpoint["update"]
@@ -318,13 +330,12 @@ class Trainer:
             os.makedirs(log_samples_path, exist_ok=True)
             print(f"Choose to sample audios. audio samples will be saved to {log_samples_path}")
 
-        # 使用带种子的generator 可以使得数据洗牌过程可复现，将被传到dataloader里面
         if exists(resumable_with_seed):
             generator = torch.Generator()
             generator.manual_seed(resumable_with_seed)
         else:
             generator = None
-        # 加载dataloader
+
         if self.batch_size_type == "sample":
             train_dataloader = DataLoader(
                 train_dataset,
@@ -336,7 +347,7 @@ class Trainer:
                 shuffle=True,
                 generator=generator,
             )
-        elif self.batch_size_type == "frame": # 动态batch
+        elif self.batch_size_type == "frame":
             self.accelerator.even_batches = False
             sampler = SequentialSampler(train_dataset)
             batch_sampler = DynamicBatchSampler(
@@ -363,20 +374,19 @@ class Trainer:
             self.num_warmup_updates * self.accelerator.num_processes
         )  # consider a fixed warmup steps while using accelerate multi-gpu ddp
         # otherwise by default with split_batches=False, warmup steps change with num_processes
-        print(f"[debug]: warmup = {warmup_updates}")
         total_updates = math.ceil(len(train_dataloader) / self.grad_accumulation_steps) * self.epochs
         decay_updates = total_updates - warmup_updates
-        print(f"[debug]: decay = {decay_updates}")
+        if self.is_main:
+            print(f"[debug]: warmup = {warmup_updates}")
+            print(f"[debug]: decay = {decay_updates}")
         warmup_scheduler = LinearLR(self.optimizer, start_factor=1e-8, end_factor=1.0, total_iters=warmup_updates)
         decay_scheduler = LinearLR(self.optimizer, start_factor=1.0, end_factor=1e-8, total_iters=decay_updates)
         self.scheduler = SequentialLR(
             self.optimizer, schedulers=[warmup_scheduler, decay_scheduler], milestones=[warmup_updates]
         )
-        # 整合调度器和dataloader
         train_dataloader, self.scheduler = self.accelerator.prepare(
             train_dataloader, self.scheduler
         )  # actual multi_gpu updates = single_gpu updates / gpu nums
-        # 默认是恢复训练的
         start_update = self.load_checkpoint()
         global_update = start_update
         
@@ -420,7 +430,7 @@ class Trainer:
             )
 
             for batch in current_dataloader:
-                if  self.freeze and self.freeze_update is not None and global_update == self.freeze_update:
+                if  self.freeze_update is not None and global_update == self.freeze_update:
                     self.accelerator.wait_for_everyone()
                     if self.is_main:
                         print(f"\nUnfreezing DiT backbone for full training.")
@@ -428,7 +438,8 @@ class Trainer:
                     for name, param in model_inner.named_parameters():
                         if "transformer_blocks" in name:
                             param.requires_grad = True
-                            print(f"set requires_grad of {name} to True")
+                            if self.is_main:
+                                print(f"set requires_grad of {name} to True")
                     self.freeze = False
                 with self.accelerator.accumulate(self.model):
                     text_inputs = batch["text"]
@@ -448,6 +459,7 @@ class Trainer:
                     loss, cond, pred = self.model(
                         mel_spec, text=text_inputs, lens=mel_lengths, noise_scheduler=self.noise_scheduler,language_ids=language_ids,
                     )
+                    del cond, pred
                     self.accelerator.backward(loss)
 
                     if self.max_grad_norm > 0 and self.accelerator.sync_gradients:
@@ -478,7 +490,6 @@ class Trainer:
 
                 if global_update % self.save_per_updates == 0 and self.accelerator.sync_gradients:
                     self.save_checkpoint(global_update)
-
                     if self.log_samples and self.accelerator.is_local_main_process:
                         print("Generating audios...")
                         ref_audio_len = mel_lengths[0]
@@ -514,7 +525,12 @@ class Trainer:
                             f"{log_samples_path}/update_{global_update}_ref.wav", ref_audio, target_sample_rate
                         )
                         self.model.train()
-
+                # peak_allocated = torch.cuda.max_memory_allocated() / 1024**3
+                # peak_reserved = torch.cuda.max_memory_reserved() / 1024**3
+                # print(
+                #     f"[Update {global_update}] "
+                #     f"Peak GPU allocated: {peak_allocated:.2f}GB, reserved: {peak_reserved:.2f}GB"
+                # )
         self.save_checkpoint(global_update, last=True)
 
         self.accelerator.end_training()

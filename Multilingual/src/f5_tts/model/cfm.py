@@ -105,12 +105,12 @@ class CFM(nn.Module):
         edit_mask=None,
         language_ids:  list[str] | torch.Tensor | None = None, 
         cfg_schedule=None,
-        cfg_decay_start=0.7,
+        cfg_decay_start=0.0,
         reverse=False,
     ):
         self.eval()
         # raw wave
-
+        # print(f"cfg schedule {cfg_schedule}")
         if cond.ndim == 2:
             cond = self.mel_spec(cond)
             cond = cond.permute(0, 2, 1)
@@ -186,8 +186,7 @@ class CFM(nn.Module):
             if cfg_schedule == "linear":
                 if t > cfg_decay_start:
                     # linear decline
-                    scale = (1.0 - t) / (1.0 - cfg_decay_start)
-                    current_cfg = cfg_strength * scale
+                    current_cfg = cfg_strength * ((1 - t) ** 2)
             elif cfg_schedule == "cosine":
                 if t > cfg_decay_start:
                     # cosine decline
@@ -220,7 +219,20 @@ class CFM(nn.Module):
             )
             pred, null_pred = torch.chunk(pred_cfg, 2, dim=0)
             # v_guided = v_cond + s * (v_cond - v_uncond)
-            return pred + (pred - null_pred) * current_cfg
+            res = pred + (pred - null_pred) * current_cfg
+            # print(res.max(),res.min())
+            # res = res.clamp(-10, 10)
+            
+            # # 缩放res
+            # rescale_phi = 0.7             
+            # std_pos = torch.std(pred, dim=(1, 2), keepdim=True) + 1e-5
+            # std_cfg = torch.std(res, dim=(1, 2), keepdim=True) + 1e-5
+            # # 缩放后的 v
+            # res_rescaled = res * (std_pos / std_cfg)
+            # # 最终的 v 是 原始v 和 缩放v 的平滑混合
+            # res= rescale_phi * res_rescaled + (1.0 - rescale_phi) * res
+            return res
+
 
         # noise input
         # to make sure batch inference result is same with different batch size, and for sure single inference
@@ -243,11 +255,9 @@ class CFM(nn.Module):
         if t_start == 0 and use_epss:  # use Empirically Pruned Step Sampling for low NFE
             t = get_epss_timesteps(steps, device=self.device, dtype=step_cond.dtype)
         else:
-            t = torch.linspace(t_start, 1, steps + 1, device=self.device, dtype=step_cond.dtype)
+            t = torch.linspace(t_start, 1, int(steps + 1), device=self.device, dtype=step_cond.dtype)
         if sway_sampling_coef is not None:
             t = t + sway_sampling_coef * (torch.cos(torch.pi / 2 * t) - 1 + t)
-        # change
-        # t = t.to(torch.float32)
 
         trajectory = odeint(fn, y0, t, **self.odeint_kwargs)
         self.transformer.clear_cache()
@@ -259,7 +269,8 @@ class CFM(nn.Module):
         if exists(vocoder):
             out = out.permute(0, 2, 1)
             out = vocoder(out)
-
+        if torch.isnan(out).any():
+            print("Detected NaN in generated buffer!")
         return out, trajectory
 
     def forward(

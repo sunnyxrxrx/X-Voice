@@ -128,100 +128,44 @@ class CustomDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
-    # def __getitem__(self, index):
-    #     while True:
-    #         row = self.data[index]
-    #         audio_path = row["audio_path"]
-    #         text = row["text"]
-    #         duration = row["duration"]
-    #         language_id = row["language_id"]
-    #         if self.root_dir:
-    #             audio_path = self.root_dir + audio_path
-    #         # filter by given length
-    #         if 0.3 <= duration <= 30:
-    #             break  # valid
-
-    #         index = (index + 1) % len(self.data)
-
-    #     if self.preprocessed_mel:
-    #         mel_spec = torch.tensor(row["mel_spec"])
-    #     else:
-    #         audio, source_sample_rate = torchaudio.load(audio_path)
-
-    #         # make sure mono input
-    #         if audio.shape[0] > 1:
-    #             audio = torch.mean(audio, dim=0, keepdim=True)
-
-    #         # resample if necessary
-    #         if source_sample_rate != self.target_sample_rate:
-    #             resampler = torchaudio.transforms.Resample(source_sample_rate, self.target_sample_rate)
-    #             audio = resampler(audio)
-
-    #         # to mel spectrogram
-    #         mel_spec = self.mel_spectrogram(audio)
-    #         mel_spec = mel_spec.squeeze(0)  # '1 d t -> d t'
-
-    #     return {
-    #         "mel_spec": mel_spec,
-    #         "text": text,
-    #         "language_id": language_id,
-    #     }
     def __getitem__(self, index):
         while True:
-            try:
-                while True:
-                    row = self.data[index]
-                    audio_path = row["audio_path"]
-                    text = row["text"]
-                    duration = row["duration"]
-                    language_id = row.get("language_id", "en") 
-                    if self.root_dir and not os.path.isabs(audio_path):
-                         audio_path = os.path.join(self.root_dir, audio_path)
-                    if 2.0 <= duration <= 30:
-                        break  
-                    index = (index + 1) % len(self.data)
-                if self.preprocessed_mel:
-                    mel_spec = torch.tensor(row["mel_spec"])
-                else:
-                    if not os.path.exists(audio_path):
-                        print(f"[Warning]: {audio_path} not found. Skipping.")
-                        index = (index + 1) % len(self.data)
-                        continue 
-                    audio, source_sample_rate = torchaudio.load(audio_path)
-                    actual_duration = audio.shape[1] / source_sample_rate
-                    if not (1.9 <= actual_duration <= 31.0):
-                        print(f"[Warning]: Actual duration ({actual_duration:.2f}s) of {audio_path} is out of range. Skipping.")
-                        index = (index + 1) % len(self.data)
-                        continue 
-                    if audio.abs().max() < 1e-5:
-                        print(f"[Warning]: Silence audio {audio_path}. Skipping.")
-                        index = (index + 1) % len(self.data)
-                        continue
+            row = self.data[index]
+            audio_path = row["audio_path"]
+            text = row["text"]
+            duration = row["duration"]
+            language_id = row.get("language_id", "en") 
+            if self.root_dir and not os.path.isabs(audio_path):
+                audio_path = os.path.join(self.root_dir, audio_path)
+            if 0.3 <= duration <= 30:
+                break  
+            
+            index = (index + 1) % len(self.data)
+        
+        if self.preprocessed_mel:
+            mel_spec = torch.tensor(row["mel_spec"])
+        else:
+            audio, source_sample_rate = torchaudio.load(audio_path)
 
-                    # make sure mono input
-                    if audio.shape[0] > 1:
-                        audio = torch.mean(audio, dim=0, keepdim=True)
+            # make sure mono input
+            if audio.shape[0] > 1:
+                audio = torch.mean(audio, dim=0, keepdim=True)
 
-                    # resample if necessary
-                    if source_sample_rate != self.target_sample_rate:
-                        resampler = torchaudio.transforms.Resample(source_sample_rate, self.target_sample_rate)
-                        audio = resampler(audio)
+            # resample if necessary
+            if source_sample_rate != self.target_sample_rate:
+                resampler = torchaudio.transforms.Resample(source_sample_rate, self.target_sample_rate)
+                audio = resampler(audio)
 
-                    # to mel spectrogram
-                    mel_spec = self.mel_spectrogram(audio)
-                    mel_spec = mel_spec.squeeze(0)  # '1 d t -> d t'
-                    
-                return {
-                    "mel_spec": mel_spec,
-                    "text": text,
-                    "language_id": language_id,
-                }
+            # to mel spectrogram
+            mel_spec = self.mel_spectrogram(audio)
+            mel_spec = mel_spec.squeeze(0)  # '1 d t -> d t'
+            
+        return {
+            "mel_spec": mel_spec,
+            "text": text,
+            "language_id": language_id,
+        }
 
-            except Exception as e:
-                print(f"[Warning:] Failed to load or process audio at index {index} ({audio_path}). Error: {e}. Skipping")
-                
-                # next sample
-                index = (index + 1) % len(self.data)
 
 
 # Dynamic Batch Sampler

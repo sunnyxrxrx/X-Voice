@@ -284,13 +284,13 @@ class RMSNorm(nn.Module):
         super().__init__()
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))
-        self.native_rms_norm = False #float(torch.__version__[:3]) >= 2.4
+        self.native_rms_norm = float(torch.__version__[:3]) >= 2.4
 
     def forward(self, x):
         if self.native_rms_norm:
             if self.weight.dtype in [torch.float16, torch.bfloat16]:
                 x = x.to(self.weight.dtype)
-            x = F.rms_norm(x, normalized_shape=(x.shape[-1],), weight=self.weight, eps=self.eps) 
+            x = F.rms_norm(x, normalized_shape=(x.shape[-1],), weight=self.weight, eps=self.eps)
         else:
             variance = x.to(torch.float32).pow(2).mean(-1, keepdim=True)
             x = x * torch.rsqrt(variance + self.eps)
@@ -299,6 +299,18 @@ class RMSNorm(nn.Module):
             x = x * self.weight
 
         return x
+    
+def get_rms_norm(qk_norm: str, dim: int, eps: float = 1e-6) -> nn.Module:
+    if qk_norm == "rms_norm":
+        return RMSNorm(dim, eps=eps)
+    elif qk_norm == "torch":
+        return torch.nn.RMSNorm(dim, elementwise_affine=True)
+    elif qk_norm == "liger":
+        from liger_kernel.transformers import LigerRMSNorm
+
+        return LigerRMSNorm(dim, eps=eps)
+    else:
+        raise ValueError(f"Unsupported qk_norm: {qk_norm}. Options: rms_norm, torch, liger")
 
 
 # AdaLayerNorm
@@ -317,10 +329,10 @@ class AdaLayerNorm(nn.Module):
             self.norm = RMSNorm(dim, eps=1e-6)
 
     def forward(self, x, emb=None):# emb[b,dim]
-        emb = self.linear(self.silu(emb)) 
-        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = torch.chunk(emb, 6, dim=1) 
+        emb = self.linear(self.silu(emb))
+        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = torch.chunk(emb, 6, dim=1)
 
-        x = self.norm(x) * (1 + scale_msa[:, None]) + shift_msa[:, None] 
+        x = self.norm(x) * (1 + scale_msa[:, None]) + shift_msa[:, None]
         return x, gate_msa, shift_mlp, scale_mlp, gate_mlp
 
 
@@ -445,11 +457,14 @@ class Attention(nn.Module):
         if qk_norm is None:
             self.q_norm = None
             self.k_norm = None
-        elif qk_norm == "rms_norm":
-            self.q_norm = RMSNorm(dim_head, eps=1e-6)
-            self.k_norm = RMSNorm(dim_head, eps=1e-6)
+        # elif qk_norm == "rms_norm":
+        #     self.q_norm = RMSNorm(dim_head, eps=1e-6)
+        #     self.k_norm = RMSNorm(dim_head, eps=1e-6)
         else:
-            raise ValueError(f"Unimplemented qk_norm: {qk_norm}")
+            self.q_norm = get_rms_norm(qk_norm, dim_head, eps=1e-6)
+            self.k_norm = get_rms_norm(qk_norm, dim_head, eps=1e-6)
+        # else:
+        #     raise ValueError(f"Unimplemented qk_norm: {qk_norm}")
 
         if self.context_dim is not None:
             self.to_q_c = nn.Linear(context_dim, self.inner_dim)
@@ -458,9 +473,12 @@ class Attention(nn.Module):
             if qk_norm is None:
                 self.c_q_norm = None
                 self.c_k_norm = None
-            elif qk_norm == "rms_norm":
-                self.c_q_norm = RMSNorm(dim_head, eps=1e-6)
-                self.c_k_norm = RMSNorm(dim_head, eps=1e-6)
+            # elif qk_norm == "rms_norm":
+            #     self.c_q_norm = RMSNorm(dim_head, eps=1e-6)
+            #     self.c_k_norm = RMSNorm(dim_head, eps=1e-6)\
+            else:
+                self.c_q_norm = get_rms_norm(qk_norm, dim_head, eps=1e-6)
+                self.c_k_norm = get_rms_norm(qk_norm, dim_head, eps=1e-6)
 
         self.to_out = nn.ModuleList([])
         self.to_out.append(nn.Linear(self.inner_dim, dim))
@@ -528,9 +546,9 @@ class AttnProcessor:
         # attention
         inner_dim = key.shape[-1]
         head_dim = inner_dim // attn.heads
-        query = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2) # 16 后32
-        key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2) # 16
-        value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2) # 16
+        query = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+        key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+        value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
 
         # qk norm
         if attn.q_norm is not None:
@@ -567,6 +585,7 @@ class AttnProcessor:
             key = key.transpose(1, 2)
             value = value.transpose(1, 2)
             if self.attn_mask_enabled and mask is not None:
+                total_seq_len = query.shape[1]
                 query, indices, q_cu_seqlens, q_max_seqlen_in_batch, _ = unpad_input(query, mask)
                 key, _, k_cu_seqlens, k_max_seqlen_in_batch, _ = unpad_input(key, mask)
                 value, _, _, _, _ = unpad_input(value, mask)
@@ -579,7 +598,7 @@ class AttnProcessor:
                     q_max_seqlen_in_batch,
                     k_max_seqlen_in_batch,
                 )
-                x = pad_input(x, indices, batch_size, q_max_seqlen_in_batch)
+                x = pad_input(x, indices, batch_size, total_seq_len)
                 x = x.reshape(batch_size, -1, attn.heads * head_dim)
             else:
                 x = flash_attn_func(query, key, value, dropout_p=0.0, causal=False)
