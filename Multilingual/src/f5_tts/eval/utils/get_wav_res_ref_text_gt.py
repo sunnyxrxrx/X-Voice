@@ -14,8 +14,8 @@ f_w = open(wav_res_ref_text, 'w')
 for line in tqdm(lines):
     utt, infer_text = line.strip().split(maxsplit=1)
     _, uttid = utt.strip().split("_",maxsplit=1)
-    if not os.path.exists(os.path.join(wav_dir, f"prompt_audio_{uttid}.wav")):
+    if not os.path.exists(os.path.join(wav_dir, f"prompt_{uttid}.wav")):
         continue
-    out_line = '|'.join([os.path.join(wav_dir, f"prompt_audio_{uttid}.wav"), infer_text])
+    out_line = '|'.join([os.path.join(wav_dir, f"prompt_{uttid}.wav"), infer_text])
     f_w.write(out_line + '\n')
 f_w.close()

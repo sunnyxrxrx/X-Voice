@@ -203,9 +203,10 @@ def get_syllable_count(text: str, lang: str) -> int:
     if not text:
         return 0
         
-    if lang in ["zh", "ja", "ko", "th"]:
+    if lang in ["zh", "ja", "ko", "th", "yue"]:
         # 简单清洗一下，只算有效字符
         clean_text = re.sub(r"\s+", "", text) 
+        # print(clean_text, len(clean_text))
         return len(clean_text)
     if lang == "vi":
         return len(text.split())
@@ -355,6 +356,15 @@ def get_inference_prompt(
                 else:
                     prompt_text = normalizer.normalize(prompt_text)
                 gt_text = normalizer.normalize(gt_text)
+                if language == "de":
+                    gt_text = "... " + gt_text
+                elif language in ["ja","zh"]:
+                    pass
+                else:
+                    gt_text = ". " + gt_text
+                if not gt_text.endswith((".","。","?","？","!","！","...")):
+                    gt_text += "."
+                print(gt_text)
                 # print(f"{gt_text}\n")
                        
             if ref_language: # Cross-lingual

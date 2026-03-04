@@ -60,10 +60,9 @@ def process_one(hypo, truth, normalizer):
     if lang[-2:] in ["zh", "ja", "ko","th"]:
         truth = " ".join([x for x in truth])
         hypo = " ".join([x for x in hypo]) # 中文hypo自带空格
-    else:
-        if normalizer:
-            truth = normalizer.normalize(truth, post=True)
-            hypo = normalizer.normalize(hypo, post=True)
+    if normalizer and lang[-2:] != "zh":
+        truth = normalizer.normalize(truth, post=True)
+        hypo = normalizer.normalize(hypo, post=True)
     truth = truth.lower()
     hypo = hypo.lower()
         
@@ -127,12 +126,18 @@ def run_asr(wav_res_text_path, res_path, normalize_text=False, faster=False):
                 transcription = res[0]["text"]
             else:
                 if faster:
-                    segments, _ = model.transcribe(wav_res_path, beam_size=5, language=lang[-2:])
+                    segments, _ = model.transcribe(
+                        wav_res_path, 
+                        beam_size=5, 
+                        language=lang[-2:]
+                        )
                     transcription = ""
                     for segment in segments:
                         transcription = transcription + " " + segment.text
                 else:
-                    result = model.transcribe(wav_res_path, language=lang[-2:])
+                    result = model.transcribe(
+                        wav_res_path, 
+                        language=lang[-2:])
                     transcription = result["text"].strip()
                 
         except Exception as e:
@@ -145,6 +150,5 @@ def run_asr(wav_res_text_path, res_path, normalize_text=False, faster=False):
         fout.write(f"{wav_res_path}\t{wer}\t{raw_truth}\t{raw_hypo}\t{inse}\t{dele}\t{subs}\n")
         fout.flush()
 
-run_asr(wav_res_text_path, res_path, normalize_text=True, faster=True)
-
+run_asr(wav_res_text_path, res_path, normalize_text=True, faster=False)
 
