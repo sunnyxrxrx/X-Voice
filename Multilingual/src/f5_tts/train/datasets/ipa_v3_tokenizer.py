@@ -186,8 +186,23 @@ def tokenize_text(tokenizer: PhonemizeTextTokenizer, text: str) -> str:
 def run_test():
     TEST_CASES = [
     #("zh", "我爱北京天安门，今天的天气真不错，气温大概是——二十五度。"), # Chinese (测试: 拼音/数字/声调)
-    ("de", "die dazu auffordert ein angebot bzw vorschläge"), # Thai (测试: 无空格长句/分词/声调)
-    ("vi", "“Ai tuyên truyền,  gieo rắc mê tín, tà tín ,tà kiến”."), # Vietnamese (测试: 声调符号/空格)
+    # ("de", "die dazu auffordert ein angebot bzw vorschläge"), # Thai (测试: 无空格长句/分词/声调)
+    # ("vi", "“Ai tuyên truyền,  gieo rắc mê tín, tà tín ,tà kiến”."), # Vietnamese (测试: 声调符号/空格)
+    # 延续你原有的格式，补充日语和俄语测试用例
+    ("vi", "là odybulin vào năm hai nghìn lẻ ba công nghệ này"), # Japanese (测试: 假名/汉字混合/长音/促音/拗音)
+    ("vi", "người ta đưa tôi đi bs đông y và tây y"),
+    ("vi", "gần một nghìn bốn trăm tỷ đồng theo quy định khu công"),
+    ("vi", "được cái là là lòng đường là sáum vỉa hè"),
+    ("vi", "du học đông âu vào những thập niên tám mươi"),
+    ("vi", "youtube được nhiều các bạn quan tâm và"),
+    ("vi", "hơn năm mươi tuổi rồi đồng nghiệp nữ lòng dạ"),
+    ("vi", "năm trăm đức phật và cũng từng được nghe pháp"),
+    ("vi", "chín giờ đến mười một giờ ngày mùng sáu tháng năm năm"),
+    ("vi", "cũng quay về ngày mười hai tháng mười hai khi vào")
+    # Japanese (测试: 促音ッ/长音ー/感叹符/片假名外来语)
+    # ("ru", "Привет, как дела? Сегодня очень хороша́я погода!"), # Russian (测试: 重音符号/软音符号/感叹符/表情符号)
+    # ("ru", "Москва́ – столица Росси́и. В ча́шке чай с мёдом и лимо́ном."), # Russian (测试: 软音符号ь/硬音符号ъ/连字符/重音/空格)
+    # ("ru", "Же́лтый ле́тний дождь шёл целы́ми дня́ми, мокро́ и хо́лодно."), # Russian (测试: 复杂辅音组合/й音/长句/逗号分隔)
     # ("ko", "안녕하세요, 이것은 테스트입니다. 오늘 날씨가 정말 좋네요."), # Korean (测试: 谚文/音变)
     # ("id", "Saya suka makan nasi goreng dan sate ayam di malam hari."), # Indonesian (测试: 简单拉丁/无声调)
     # ("en","it WAS A DOG"),

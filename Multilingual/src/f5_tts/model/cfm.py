@@ -44,6 +44,7 @@ class CFM(nn.Module):
         ),
         audio_drop_prob=0.3,
         cond_drop_prob=0.2,
+        lang_drop_prob=0.0,
         num_channels=None,
         mel_spec_module: nn.Module | None = None,
         mel_spec_kwargs: dict = dict(),
@@ -63,7 +64,8 @@ class CFM(nn.Module):
         # classifier-free guidance
         self.audio_drop_prob = audio_drop_prob
         self.cond_drop_prob = cond_drop_prob
-
+        self.lang_drop_prob = lang_drop_prob
+        print(f"[debug]: {audio_drop_prob=}, {cond_drop_prob=}(text, audio, and language), {lang_drop_prob=}(language).")
         # transformer
         self.transformer = transformer
         dim = transformer.dim
@@ -201,6 +203,7 @@ class CFM(nn.Module):
                     mask=mask,
                     drop_audio_cond=False,
                     drop_text=False,
+                    drop_lang=False,
                     cache=True,
                     language_ids=language_ids,
                 )
@@ -334,18 +337,24 @@ class CFM(nn.Module):
 
         # transformer and cfg training with a drop rate
         drop_audio_cond = random() < self.audio_drop_prob  # p_drop in voicebox paper
-        if random() < self.cond_drop_prob:  # p_uncond in voicebox paper
+        rand = random()
+        if rand < self.cond_drop_prob:  # p_uncond in voicebox paper
             drop_audio_cond = True
             drop_text = True
+            drop_lang = True
+        elif rand < self.cond_drop_prob + self.lang_drop_prob:
+            drop_text = False
+            drop_lang = True
         else:
             drop_text = False
+            drop_lang = False
         
         text_for_ctc = text 
         use_ctc = getattr(self.transformer, "use_ctc", False)
         if use_ctc:
             pred, ctc_logits = self.transformer(
                 x=φ, cond=cond, text=text, time=time, 
-                drop_audio_cond=drop_audio_cond, drop_text=drop_text, 
+                drop_audio_cond=drop_audio_cond, drop_text=drop_text, drop_lang=drop_lang,
                 mask=mask, language_ids=language_ids,
                 return_ctc=True,
             )
@@ -354,7 +363,7 @@ class CFM(nn.Module):
             # apply mask will use more memory; might adjust batchsize or batchsampler long sequence threshold
             pred = self.transformer(
                 x=φ, cond=cond, text=text, time=time, 
-                drop_audio_cond=drop_audio_cond, drop_text=drop_text, 
+                drop_audio_cond=drop_audio_cond, drop_text=drop_text, drop_lang=drop_lang,
                 mask=mask, language_ids=language_ids,
                 return_ctc=False,
             )
@@ -363,7 +372,7 @@ class CFM(nn.Module):
         loss = F.mse_loss(pred, flow, reduction="none")
         loss = loss[rand_span_mask]
         
-        if use_ctc and self.ctc_loss_weight > 0:
+        if use_ctc and self.ctc_loss_weight > 0 and not drop_text:
             # [B, N, C] -> [N, B, C] and log_softmax
             ctc_input = ctc_logits.transpose(0, 1).log_softmax(dim=2)
             # text token starts from 0, padding is -1

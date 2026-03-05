@@ -24,6 +24,8 @@ def main(model_cfg):
     model_arc = model_cfg.model.arch
     tokenizer = model_cfg.model.tokenizer
     mel_spec_type = model_cfg.model.mel_spec.mel_spec_type
+    lang_drop_prob = model_cfg.model.lang_drop_prob
+    cond_drop_prob = model_cfg.model.cond_drop_prob
 
     exp_name = f"{model_cfg.model.name}_{mel_spec_type}_{model_cfg.model.tokenizer}_{model_cfg.datasets.name}"
     wandb_resume_id = None
@@ -41,10 +43,13 @@ def main(model_cfg):
         tokenizer=tokenizer,
         mel_spec_kwargs=model_cfg.model.mel_spec,
         vocab_char_map=vocab_char_map,
+        lang_drop_prob=lang_drop_prob,
+        cond_drop_prob=cond_drop_prob,
     )
     print(f"Parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
     pretrained_path = model_cfg.ckpts.get("pretrained_path", None)
     freeze_update = model_cfg.ckpts.get("freeze_update", None)
+    continue_training = model_cfg.ckpts.get("continue_training", None)
     # init trainer
     trainer = Trainer(
         model,
@@ -72,6 +77,7 @@ def main(model_cfg):
         model_cfg_dict=OmegaConf.to_container(model_cfg, resolve=True),
         pretrained_path=pretrained_path,
         freeze_update=freeze_update,
+        continue_training=continue_training,
     )
 
     train_dataset = load_dataset(model_cfg.datasets.name, tokenizer, mel_spec_kwargs=model_cfg.model.mel_spec)
