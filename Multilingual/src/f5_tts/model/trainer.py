@@ -227,7 +227,7 @@ class Trainer:
                 filtered_dict = {}
                 for k, v in checkpoint.items():
                     clean_k = k.replace("ema_model.", "")
-                    if clean_k in model_dict and v.shape == model_dict[clean_k].shape:
+                    if clean_k in model_dict and v.shape == model_dict[clean_k].shape and "cond_fusion" not in clean_k:
                         if self.is_main:
                             print(f"will load {clean_k}")
                         filtered_dict[clean_k] = v

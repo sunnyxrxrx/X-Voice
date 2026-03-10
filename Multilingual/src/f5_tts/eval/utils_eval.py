@@ -252,8 +252,6 @@ def get_inference_prompt(
     max_secs=31,
     language=None,
     ipa_tokenizer=None,
-    force_rescan=False,
-    cache_dir=None,
     normalize_text=False,
     drop_text=False,
     reverse=False,
@@ -284,7 +282,7 @@ def get_inference_prompt(
     if normalize_text:
         print("Using text normalizer to pre-process the texts.")
         normalizer = TextNormalizer(language=language)
-        if ref_language is not None:
+        if ref_language is not None and not drop_text:
             ref_normalizer = TextNormalizer(language=ref_language)
     for item in tqdm(metainfo, desc="Processing prompts..."):
         if len(item)==5:
@@ -309,9 +307,9 @@ def get_inference_prompt(
             
             if normalize_text:
                 # print(gt_text)
-                if ref_language:
+                if ref_language and not drop_text:
                     prompt_text = ref_normalizer.normalize(prompt_text)
-                else:
+                elif not drop_text:
                     prompt_text = normalizer.normalize(prompt_text)
                 gt_text = normalizer.normalize(gt_text)
                 if language == "de":
@@ -324,38 +322,43 @@ def get_inference_prompt(
                     gt_text += "."
                 print(gt_text)
                 # print(f"{gt_text}\n")
-                       
+            ref_text_tokenized, gen_text_tokenized = None, None         
             if ref_language: # Cross-lingual
                 assert tokenizer.startswith("ipa") and ref_ipa_tokenizer and language and ipa_tokenizer, "Cross-lingual needs ipa tokenizer."
-                ref_text_str = ref_ipa_tokenizer(prompt_text)
                 gen_text_str = ipa_tokenizer(gt_text) 
-                ref_text_tokenized = str_to_list_ipa_all(ref_text_str, tokenizer, language)
                 gen_text_tokenized = str_to_list_ipa_all(gen_text_str, tokenizer, ref_language)
+                if not drop_text:
+                    ref_text_str = ref_ipa_tokenizer(prompt_text)
+                    ref_text_tokenized = str_to_list_ipa_all(ref_text_str, tokenizer, language)
+                
             else:
                 if tokenizer == "pinyin":
-                    ref_text_tokenized = convert_char_to_pinyin([prompt_text], polyphone=polyphone)[0]
+                    if not drop_text:
+                        ref_text_tokenized = convert_char_to_pinyin([prompt_text], polyphone=polyphone)[0]
                     gen_text_tokenized = convert_char_to_pinyin([gt_text], polyphone=polyphone)[0]
                 elif tokenizer.startswith("ipa") and ipa_tokenizer:
-                    ref_text_str = ipa_tokenizer(prompt_text)
+                    if not drop_text:
+                        ref_text_str = ipa_tokenizer(prompt_text)
+                        ref_text_tokenized = str_to_list_ipa_all(ref_text_str, tokenizer, language)
                     gen_text_str = ipa_tokenizer(gt_text)
-                    ref_text_tokenized = str_to_list_ipa_all(ref_text_str, tokenizer, language)
                     gen_text_tokenized = str_to_list_ipa_all(gen_text_str, tokenizer, language)
                 else:
-                    ref_text_tokenized = list(prompt_text)
+                    if not drop_text:
+                        ref_text_tokenized = list(prompt_text)
                     gen_text_tokenized = list(gt_text)
                     
-            if len(ref_text_tokenized[-1].encode("utf-8")) == 1 and not reverse:
+            if not drop_text and len(ref_text_tokenized[-1].encode("utf-8")) == 1 and not reverse:
                 ref_text_tokenized.append(" ")
             elif len(gen_text_tokenized[-1].encode("utf-8")) == 1 and reverse:
                 gen_text_tokenized.append(" ")
             if random.random()<0.001:
                 print(f"==========\n{ref_text_tokenized}\n{gen_text_tokenized}\n============")
             
-            curr_ref_len = len(ref_text_tokenized)
+            curr_ref_len = len(ref_text_tokenized) if not drop_text else 0
             curr_gen_len = len(gen_text_tokenized)
             if drop_text:
                 text_list = [gen_text_tokenized]
-                curr_ref_len = 0
+                # print(text_list)
             elif reverse:
                 text_list = [gen_text_tokenized + ref_text_tokenized] # 两个列表相加
             else:
@@ -392,6 +395,11 @@ def get_inference_prompt(
                     pred_duration = min(max(gt_num_unit / speed.item(), 2), 30)
                     gen_mel_len = int((pred_duration * target_sample_rate) / hop_length)
                     total_mel_len = ref_mel_len + gen_mel_len
+                    
+                    if drop_text:
+                        # gen_est = len(gen_text_tokenized)
+                        ref_est = int(gt_num_unit / gen_mel_len * ref_mel_len)
+                        text_list = [[" "] * int(ref_est * 1.1) + [".", " ", ".", " "] + text_list[0]] 
                 elif sp_type == "syllable":
                     if ref_language:
                         ref_syllables = get_syllable_count(prompt_text, ref_language)

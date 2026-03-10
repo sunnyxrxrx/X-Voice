@@ -1,12 +1,19 @@
 # 修改这里的配置
 # bash src/f5_tts/eval/eval_cross_lingual.sh
-asr_gpu=1
+asr_gpu=2
 task=zero_shot
 dataset=lemas_eval_new # lemas_eval, cv3_eval, lemas_eval_new
-ckpt=980000
-exp_name=F5TTS_v1_Base_multilingual_tkncat # M3TTS_Small_multilingual_v1
-test_set="en fr" # da el es et fi fr hr hu id it lt mt nl pl pt sk sl sv th de" #cs da el es et fi fr ko" 
-ref_set="fr zh"
+ckpt=600000
+exp_name=F5TTS_v1_Base_multilingual_full_catada # M3TTS_Small_multilingual_v1
+test_set="en zh fr" # da el es et fi fr hr hu id it lt mt nl pl pt sk sl sv th de" #cs da el es et fi fr ko" 
+ref_set="fr en zh"
+
+concat_method=2
+seed=0
+nfe=16
+cfg_strength=5.0
+layered=False
+cfg_strength2=4.0
 
 test_langs=($test_set)
 ref_langs=($ref_set)
@@ -17,13 +24,28 @@ fi
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )" # to eval/
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/../../../" && pwd )" # to F5-TTS/
 cv3_dir="${PROJECT_ROOT}/data/${dataset}"
-decode_dir="${PROJECT_ROOT}/results/${exp_name}_${ckpt}/${dataset}/seed0_euler_nfe16_vocos_ss-1_cfg2.0_speed1.0zero_shot"
+# decode_dir="${PROJECT_ROOT}/results/${exp_name}_${ckpt}/${dataset}/seed0_euler_nfe16_vocos_ss-1_cfg2.0_speed1.0zero_shot"
 
-# Inference
-python src/f5_tts/eval/eval_infer_batch.py \
-    -s 0 -n ${exp_name} -c ${ckpt} -t "${dataset}" -nfe 16 -l \
-    "${test_set// /,}" --cfg_strength 2.0 --normalize_text --sp_type "syllable" \
-    --cross_lingual -rl "${ref_set// /,}" #-ns "SpeedPredict_Base" -cs 20000 --reverse
+if [ "$layered" = "True" ]; then
+    decode_dir="${PROJECT_ROOT}/results/${exp_name}_${ckpt}/${dataset}/seed${seed}_concat${concat_method}_euler_nfe${nfe}_vocos_ss-1_cfgI${cfg_strength}_cfgII${cfg_strength2}_speed1.0zero_shot"
+    accelerate launch --main_process_port 29507 src/f5_tts/eval/eval_infer_batch.py \
+        -s ${seed} -n "${exp_name}" -c ${ckpt} -t "${dataset}" -nfe ${nfe} -l "${test_set// /,}" \
+        --cfg_strength ${cfg_strength} --layered --cfg_strength2 ${cfg_strength2} \
+        --normalize_text --sp_type "pretrained" --concat_method ${concat_method} \
+        --cross_lingual -rl "${ref_set// /,}" \
+        --drop_text --decode_dir "${decode_dir}" -ns "SpeedPredict_Base" -cs 20000 # --reverse
+
+else
+    decode_dir="${PROJECT_ROOT}/results/${exp_name}_${ckpt}/${dataset}/seed${seed}_concat${concat_method}_euler_nfe${nfe}_vocos_ss-1_cfg${cfg_strength}_speed1.0zero_shot"
+    # Inference
+    accelerate launch --main_process_port 29508 src/f5_tts/eval/eval_infer_batch.py \
+        -s ${seed} -n "${exp_name}" -c ${ckpt} -t "${dataset}" -nfe ${nfe} -l "${test_set// /,}" \
+        --cfg_strength ${cfg_strength} \
+        --normalize_text --sp_type "pretrained" --concat_method ${concat_method} \
+        --cross_lingual -rl "${ref_set// /,}" \
+        --drop_text --decode_dir "${decode_dir}" -ns "SpeedPredict_Base" -cs 20000 # --reverse 
+fi
+
 
 # Evaluation
 apt-get install -y sox libsox-dev 

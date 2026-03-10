@@ -1,20 +1,30 @@
-from german_transliterate.core import GermanTransliterate # de
-from compound_split import char_split # de
-from xphonebr import normalizer as pt_processor # pt
-from tn.chinese.normalizer import Normalizer # zh
 from nemo_text_processing.text_normalization.normalize import Normalizer as nemo_normalizer
 from num2words import num2words
 import re
+from functools import partial
+try:
+    from xphonebr import normalizer as pt_processor
+except ImportError:
+    pt_processor = None
+try:
+    from tts_preprocess_et.convert import convert_sentence as et_convert_sentence
+except ImportError:
+    et_convert_sentence = None
+# import debugpy
+# debugpy.listen(('localhost', 5678))
+# print("Waiting for debugger attach")
+# debugpy.wait_for_client()
 
 class TextNormalizer:
     def __init__(self, language):
         self.language = language
-        self._init_language_processor()
+        self.processor = self._init_language_processor()
         print(f"Successfully created text normalizer for {language}.")
 
     def _init_language_processor(self):
         # if self.language == "de":
-        #     self.de_processor = GermanTransliterate(
+        #     from german_transliterate.core import GermanTransliterate # de
+        #     return = GermanTransliterate(
         #         replace={';': ',', ':': ' ','bzw.': 'beziehungsweise', 'u.a.': 'unter anderem','etc.': 'et cetera'},
         #         sep_abbreviation=' ',
         #         make_lowercase=True,
@@ -27,14 +37,20 @@ class TextNormalizer:
         #             'special',            # 特殊格式转口语（如8/10→acht von zehn）
         #         ]
         #     )
-        if self.language == 'zh':
-            self.zh_processor = Normalizer()
+        if self.language in ["zh","yue"]:
+            from tn.chinese.normalizer import Normalizer as zh_normalizer # zh
+            return zh_normalizer()
+        elif self.language == "bg":
+            from bg_text_normalizer import BulgarianTextNormalizer
+            return BulgarianTextNormalizer()
+
         else:
             try:
-                self.processor = nemo_normalizer(input_case='cased', lang=self.language)
+                return nemo_normalizer(input_case='cased', lang=self.language)
             except Exception as e:
-                self.processor = None
                 print(e)
+                return None
+                
             
     def split_german_sentence(self, text):
         if not text:
@@ -70,6 +86,7 @@ class TextNormalizer:
         text = text.replace('!!', '!').replace('¡¡', '¡')
         text = text.replace('!,', '!').replace('!.', '!')
         text = text.replace('?,', '?').replace('?.', '?')
+        text = text.replace('-', ' ')
         quote_pattern = r'[„“»«”]' 
         text= re.sub(quote_pattern, '"', text)
         text = text.replace('#', '').replace('*',' ') # 德语可能会有*在两个单词中间，换为空格
@@ -80,53 +97,50 @@ class TextNormalizer:
             text = text[0].upper() + text[1:]
         return text
     
+    def _replace_num(self, match, to=None):
+        number = match.group()
+        try:
+            val = float(number)
+            lang = self.language
+            if val.is_integer():
+                val = int(val)
+                if to:
+                    return num2words(val, lang=lang, to=to)
+                return num2words(val, lang=lang)
+            else:
+                if to:
+                    return num2words(val, lang=lang, to=to)
+                return num2words(val, lang=lang)
 
-    def normalize(self, text: str, post: bool=False) -> str:
+        except Exception as e:
+            logger.error(f"num2words failed for [{number}] in {self.language}: {e}")
+            return number
+
+    def normalize(self, text: str, post: bool=False, to=None) -> str:
         if not isinstance(text, str) or len(text.strip()) == 0:
             print("Text is not a string, please check.")
             return ""  
         text_clean = self.clean_text_for_tts(text)
-        # text_clean = text
-        # if self.language == "de":
-        #     text1 = self.de_processor.transliterate(text_clean)
-        #     # print(text1)
-        #     if post:
-        #         text_normalized = self.split_german_sentence(text1)
-        #         text_normalized = text_normalized.lower()
-        #     else:
-        #         text_normalized = text1
+        
         if self.language == "pt":
             text_normalized = pt_processor(text_clean)
-        elif self.language == "zh":
-            text_normalized = self.zh_processor.normalize(text_clean)
+        elif self.language == "et":
+            from tts_preprocess_et.convert import convert_sentence
+            text_normalized = convert_sentence(text_clean)
+        elif self.processor and self.language in ["zh", "bg", "yue"]: # "de"
+            text_normalized = self.processor.normalize(text_clean)
+        elif self.processor:
+            text_normalized = self.processor.normalize(text_clean, verbose=False, punct_post_process=True)
         else:
-            # 数字转文字 
-            def replace_num(match):
-                number = match.group()
-                print(f"find number: {number}")
-                try:
-                    target_lang = self.language
-                    val = float(number)
-                    if val.is_integer():
-                        num = num2words(int(val), lang=self.language)
-                    else:
-                        # 确实是小数的话，按浮点数处理
-                        num = num2words(val, lang=self.language)
-                    print(f"convert to: {num}\n")
-                    return num
-                except Exception as e:
-                    print(f"Error when converting number to words: {e}")
-                    return number
-            if self.processor:
-                text_normalized = self.processor.normalize(text_clean, verbose=False, punct_post_process=True)
-            else:
-                text_normalized = re.sub(r'\d+(\.\d+)?', replace_num, text_clean) # 匹配数字
-            # if self.language == "de":
-            #     if post:
-            #         text_normalized = self.split_german_sentence(text_normalized)
-            #         text_normalized = text_normalized.lower()
-            #     else:
-            #         text_normalized = text_normalized
+            replace_num_with_to = partial(self._replace_num, to=to)
+            text_normalized = re.sub(r'\d+(\.\d+)?', replace_num_with_to, text_clean)
+        # if self.language == "de":
+        #     if post:
+        #         from compound_split import char_split # de
+        #         text_normalized = self.split_german_sentence(text_normalized)
+        #         text_normalized = text_normalized.lower()
+        #     else:
+        #         text_normalized = text_normalized
             
         return text_normalized
 
@@ -134,10 +148,10 @@ class TextNormalizer:
 
 if __name__ == "__main__":
     
-    normalizer = TextNormalizer(language="it")    
+    normalizer = TextNormalizer(language="et")    
     test_cases = [
-        "Francia, quattro secondi (80 lire: €  0.04). E di nuovo penso:",
-        "Francia, quattro secondi (ottanta lire: zero euro.04). e di nuovo penso:"
+        "Tere hommikust! Eestis on palju ilusaid metsi 2026..."
+        # "Đó cũng là lý do glucose gọi là \"đường huyết\"."
         # "kommen fünf vertriebsgemeinkosten zu schlag"
         # "Die Rechtsschutzversicherungsgesellschaften prüfen das Arbeiterunfallversicherungsgesetz.",
         # "Ich habe das neue Update für den Webbrowser heruntergeladen, das Interface ist jetzt viel cooler.",
@@ -147,7 +161,7 @@ if __name__ == "__main__":
 
     for idx, test_text in enumerate(test_cases, 1):
         print(f"原始文本：{test_text}")
-        normalized_text = normalizer.normalize(test_text,post=True)
+        normalized_text = normalizer.normalize(test_text,post=True) #, to="cardinal")
         print(f"归一化后：{normalized_text}\n")
         
 # python src/f5_tts/eval/text_normalizer.py

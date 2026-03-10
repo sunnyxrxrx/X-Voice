@@ -73,8 +73,12 @@ def main():
     parser.add_argument("--normalize_text", action="store_true")
     parser.add_argument("--cfg_strength", default=2.0, type=float)
     parser.add_argument("--cfg_schedule", default=None, type=str)
+    parser.add_argument("--cfg_decay_time", default=0.6, type=float)
     parser.add_argument("--cfg_strength2", default=0.0, type=float)
+    parser.add_argument("--decode_dir", default=None, type=str)
+    parser.add_argument("--concat_method", default=1, type=int)
     parser.add_argument("--layered", action="store_true")
+    parser.add_argument("--drop_text", action="store_true")
     
     parser.add_argument("--cross_lingual", action="store_true")
     parser.add_argument("-rl", "--reference_languages", default=None, help="Comma separated list of languages, length is the same as --languages")
@@ -96,7 +100,11 @@ def main():
     ckpt_step_sp = args.ckptstepsp
     reverse = args.reverse
     cfg_schedule = args.cfg_schedule
+    cfg_decay_time = args.cfg_decay_time
+    drop_text = args.drop_text
     cross_lingual = args.cross_lingual
+    decode_dir = args.decode_dir
+    concat_method = args.concat_method
     
     in2lang = { 
         "th":"thai", "id":"indonesian", "vi":"vietnamese", 
@@ -223,7 +231,8 @@ def main():
     # model = accelerator.prepare(model)
     
     lang_to_id = model.transformer.lang_to_id
-    infill_lang_type = model.transformer.infill_lang_type
+    text_infill_lang_type = model.transformer.text_infill_lang_type
+    time_infill_lang_type = model.transformer.time_infill_lang_type
     tokenizer_class_map = {
         "ipa": PhonemizeTextTokenizer,
         "ipa_v2": PhonemizeTextTokenizer_v2,
@@ -244,7 +253,7 @@ def main():
                 ref_language= reference_languages[i]
                 ref_ipa_id = get_ipa_id(ref_language)
                 ref_ipa_tokenizer = tokenizer_class(language=ref_ipa_id)
-                ref_language_idx = lang_to_id.get(in_language, len(lang_to_id))
+                ref_language_idx = lang_to_id.get(ref_language, len(lang_to_id))
         
         if testset == "ls_pc_test_clean":
             data_dir = "/data"
@@ -274,31 +283,36 @@ def main():
 
 
         # path to save genereted wavs
-        if not layered:
-            output_dir = (
-                f"{rel_path}/"
-                f"results/{exp_name}_{ckpt_step}/{testset}/"
-                f"seed{seed}_{ode_method}_nfe{nfe_step}_{mel_spec_type}"
-                f"{f'_ss{sway_sampling_coef}' if sway_sampling_coef else ''}"
-                f"_cfg{cfg_strength}_speed{speed}"
-                f"{'_gt-dur' if use_truth_duration else ''}"
-                f"{'_no-ref-audio' if no_ref_audio else ''}"
-            )
+        if decode_dir is not None:
+            output_dir = decode_dir
         else:
-            output_dir = (
-                f"{rel_path}/"
-                f"results/{exp_name}_{ckpt_step}_layered/{testset}/"
-                f"seed{seed}_{ode_method}_nfe{nfe_step}_{mel_spec_type}"
-                f"{f'_ss{sway_sampling_coef}' if sway_sampling_coef else ''}"
-                f"_cfgI{cfg_strength}_cfgII{cfg_strength2}_speed{speed}"
-                f"{'_gt-dur' if use_truth_duration else ''}"
-                f"{'_no-ref-audio' if no_ref_audio else ''}"
-            )
+            if not layered:
+                output_dir = (
+                    f"{rel_path}/"
+                    f"results/{exp_name}_{ckpt_step}/{testset}/"
+                    f"seed{seed}_concat{concat_method}_{ode_method}_nfe{nfe_step}_{mel_spec_type}"
+                    f"{f'_ss{sway_sampling_coef}' if sway_sampling_coef else ''}"
+                    f"_cfg{cfg_strength}_speed{speed}"
+                    f"{'_gt-dur' if use_truth_duration else ''}"
+                    f"{'_no-ref-audio' if no_ref_audio else ''}"
+                    "zero_shot"
+                )
+            else:
+                output_dir = (
+                    f"{rel_path}/"
+                    f"results/{exp_name}_{ckpt_step}/{testset}/"
+                    f"seed{seed}_concat{concat_method}_{ode_method}_nfe{nfe_step}_{mel_spec_type}"
+                    f"{f'_ss{sway_sampling_coef}' if sway_sampling_coef else ''}"
+                    f"_cfgI{cfg_strength}_cfgII{cfg_strength2}_speed{speed}"
+                    f"{'_gt-dur' if use_truth_duration else ''}"
+                    f"{'_no-ref-audio' if no_ref_audio else ''}"
+                    "zero_shot"
+                )
         if testset in ["cv3_eval","lemas_eval", "lemas_eval_new", "mixed_eval"]:
             if cross_lingual:
-                output_dir += f"zero_shot/{ref_language}_{in_language}/wavs"
+                output_dir += f"/{ref_language}_{in_language}/wavs"
             else:
-                output_dir += f"zero_shot/{in_language}/wavs"
+                output_dir += f"/{in_language}/wavs"
                 
         print(f"will be saved to:{output_dir}")
         
@@ -320,10 +334,8 @@ def main():
             infer_batch_size=infer_batch_size,
             language=in_language,
             ipa_tokenizer=ipa_tokenizer,
-            force_rescan=False,
-            cache_dir=data_dir,
             normalize_text=args.normalize_text,
-            drop_text=False,
+            drop_text=drop_text,
             reverse=reverse,
             sp_type=sp_type,
             model_sp=model_sp,
@@ -345,21 +357,21 @@ def main():
                 
                 batch_lang_ids = []
                 for r_len, g_len in zip(ref_text_lens, gen_text_lens):
-                    if cross_lingual and infill_lang_type in ["token_concat", "ada"]:
-                        # 法一
-                        ids = [ref_language_idx] * r_len + [in_language_idx] * g_len
-                        # 法二
-                        # ids =  [in_language_idx] * (r_len + g_len)
-                        # 法三
-                        # unk_idx = len(lang_to_id)
-                        # ids = [unk_idx] * r_len + [in_language_idx] * g_len
+                    if cross_lingual and text_infill_lang_type in ["token_concat", "ada"]:
+                        if concat_method == 1:
+                            ids = [ref_language_idx] * r_len + [in_language_idx] * g_len
+                        elif concat_method == 2:
+                            ids =  [in_language_idx] * (r_len + g_len)
+                        elif concat_method == 3:
+                            unk_idx = len(lang_to_id)
+                            ids = [unk_idx] * r_len + [in_language_idx] * g_len
                     else:
                         ids = [in_language_idx] * r_len + [in_language_idx] * g_len
                     batch_lang_ids.append(torch.tensor(ids))
                 lang_ids_tensor = pad_sequence(batch_lang_ids, batch_first=True, padding_value=in_language_idx).to(device)
                 
-                if infill_lang_type in ["add_only", "mixed_concat", "concat", "tkncat"]: # 如果使用add_only 或 concat，只能用之前的版本传入目标语言字符串
-                    lang_ids_tensor = [in_language]
+                # if infill_lang_type in ["add_only", "mixed_concat", "concat", "tkncat"]: # 如果使用add_only 或 concat，只能用之前的版本传入目标语言字符串
+                #     lang_ids_tensor = [in_language]
                 
                 with torch.inference_mode():
                     generated, _ = model.sample(
@@ -374,6 +386,7 @@ def main():
                         seed=seed,
                         language_ids=lang_ids_tensor,
                         cfg_schedule=cfg_schedule,
+                        cfg_decay_time=cfg_decay_time,
                         reverse=reverse,
                         cfg_strength2=cfg_strength2,
                         layered=layered,
@@ -384,6 +397,7 @@ def main():
                             gen = gen[: total_mel_lens[i] - ref_mel_lens[i], :].unsqueeze(0)
                         else:
                             gen = gen[ref_mel_lens[i] : total_mel_lens[i], :].unsqueeze(0)
+                            # gen = gen[ : total_mel_lens[i], :].unsqueeze(0) # 测试用
                         gen_mel_spec = gen.permute(0, 2, 1).to(torch.float32)
                         if mel_spec_type == "vocos":
                             generated_wave = vocoder.decode(gen_mel_spec).cpu()
