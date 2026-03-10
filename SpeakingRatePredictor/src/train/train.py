@@ -25,7 +25,10 @@ def main(cfg):
         mel_spec_kwargs=cfg.model.mel_spec,
         loss_type=cfg.model.loss,
         arch_kwargs=cfg.model.arch,
-        sigma_factor=cfg.model.get('gce_sigma', 1)
+        sigma_factor=cfg.model.get('gce_sigma', 1),
+        silence_prob=cfg.model.get("silence_prob", 0.0),
+        silence_ratio_min=cfg.model.get("silence_ratio_min", 0.2),
+        silence_ratio_max=cfg.model.get("silence_ratio_max", 0.8),
     )
 
     # init trainer
@@ -57,13 +60,11 @@ def main(cfg):
         cfg.datasets.name, 
         mel_spec_kwargs=cfg.model.mel_spec,
         split="train",
-        silence_prob=cfg.datasets.silence_prob
     )
     val_dataset = load_dataset(
         cfg.datasets.name, 
         mel_spec_kwargs=cfg.model.mel_spec,
         split="val",
-        silence_prob=0.0
     )
 
     trainer.train(

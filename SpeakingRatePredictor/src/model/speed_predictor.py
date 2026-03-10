@@ -3,6 +3,7 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch.nn.utils.rnn import pad_sequence
 from typing import Literal
 
 from x_transformers.x_transformers import RotaryEmbedding
@@ -110,12 +111,18 @@ class SpeedPredictor(nn.Module):
         sigma_factor: int = 2,
         mel_spec_module: nn.Module | None = None,
         num_channels: int = 100,
+        silence_prob: float = 0.0,
+        silence_ratio_min: float = 0.2,
+        silence_ratio_max: float = 0.8,
     ):
         super().__init__()
         self.num_classes = 32
         self.mel_spec = default(mel_spec_module, MelSpec(**mel_spec_kwargs))
         num_channels = default(num_channels, self.mel_spec.n_mel_channels)
         self.num_channels = num_channels
+        self.silence_prob = silence_prob
+        self.silence_ratio_min = silence_ratio_min
+        self.silence_ratio_max = silence_ratio_max
         self.speed_transformer = SpeedTransformer(**arch_kwargs, num_classes=self.num_classes)
         if loss_type == "GCE":
             self.loss = GaussianCrossEntropyLoss(num_classes=self.num_classes, sigma_factor=sigma_factor)
@@ -147,6 +154,40 @@ class SpeedPredictor(nn.Module):
         pred_speed = self.speed_mapper.label_to_speed(pred_class)
         return pred_speed
 
+    def _inject_silence_mel_batch(
+        self,
+        inp: float["b n d"],  # noqa: F722
+        lens: int["b"],  # noqa: F821
+    ):
+        # Batch-level gating: either all samples are augmented or none.
+        if torch.rand(1, device=inp.device).item() < (1.0 - self.silence_prob):
+            return inp, lens
+
+        sil_ratio = torch.empty(1, device=inp.device).uniform_(
+            self.silence_ratio_min, self.silence_ratio_max
+        ).item()
+        sil_len = int(int(lens.max().item()) * sil_ratio)
+        if sil_len == 0:
+            return inp, lens
+
+        aug_sequences = []
+        aug_lens = []
+        for sample, sample_len in zip(inp, lens):
+            valid_len = int(sample_len.item())
+            valid_part = sample[:valid_len]
+            front_len = torch.randint(0, sil_len + 1, (1,), device=inp.device).item()
+            back_len = sil_len - front_len
+            front_silence = inp.new_zeros((front_len, inp.shape[-1]))
+            back_silence = inp.new_zeros((back_len, inp.shape[-1]))
+            aug_sample = torch.cat((front_silence, valid_part, back_silence), dim=0)
+
+            aug_sequences.append(aug_sample)
+            aug_lens.append(valid_len + sil_len)
+
+        padded_aug = pad_sequence(aug_sequences, batch_first=True, padding_value=0.0)
+        lens_aug = torch.tensor(aug_lens, device=lens.device, dtype=lens.dtype)
+        return padded_aug, lens_aug
+
     def forward(
         self,
         inp: float["b n d"] | float["b nw"],  # mel or raw wave  # noqa: F722
@@ -157,7 +198,16 @@ class SpeedPredictor(nn.Module):
             inp = self.mel_spec(inp)
             inp = inp.permute(0, 2, 1)
             assert inp.shape[-1] == self.num_channels
-        device = self.device
+
+        batch, seq_len, device = *inp.shape[:2], inp.device
+        if not exists(lens):
+            lens = torch.full((batch,), seq_len, device=device, dtype=torch.long)
+        else:
+            lens = lens.to(device=device, dtype=torch.long)
+
+        if self.training and self.silence_prob > 0:
+            inp, lens = self._inject_silence_mel_batch(inp, lens)
+
         pred = self.speed_transformer(inp, lens)
         if isinstance(self.loss, GaussianCrossEntropyLoss):
             loss = self.loss(pred, speed, self.device)  # Pass device for GCE
