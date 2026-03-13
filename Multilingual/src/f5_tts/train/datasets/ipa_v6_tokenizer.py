@@ -89,6 +89,7 @@ IPA_NORMALIZATION_MAP = {
     "eɪɛ": "eɪ|ɛ", "zeɪɛ": "z|eɪ|ɛ", "teɪɛ": "t|eɪ|ɛ", "əeɪ": "ə|eɪ", "aɪɛ": "aɪ|ɛ", "taɪ": "t|aɪ", 
     "jap": "ja|p", "jud": "ju|d", "jaɛ": "ja|ɛ", "ʃja": "ʃ|ja", "jat": "ja|t", "ɑja": "ɑ|ja", "əlɹ": "əl|ɹ", "əlf": "əl|f", "oʊw": "oʊ|w", 
     "daʊ":"d|aʊ", "meɪ":"m|eɪ", "taʊ":"t|aʊ", "daɪ":"d|aɪ",
+    "nɡ": "ŋ",        # 独立的鼻音
 }
 
 def convert_char_to_pinyin(text_list, polyphone=True):
@@ -157,7 +158,7 @@ class PhonemizeTextTokenizer:
         separator=Separator(word=" ", syllable="", phone="|"),
         preserve_punctuation=True,
         punctuation_marks: Union[str, Pattern] = Punctuation.default_marks(),
-        with_stress: bool = False,
+        with_stress: bool = True,
         tie: Union[bool, str] = False,
         language_switch: LanguageSwitch = "remove-flags",
         words_mismatch: WordMismatch = "ignore",
@@ -285,12 +286,13 @@ def get_ipa_id(in_language: str) -> str:
 
 def run_test():
     TEST_CASES = [
-    # ("yue","「我們真的都嚇呆了」這位母親表示。")
+    # ("el",". Πώς δεν είν' αστείο, βέβαια είναι αστείο· πάμε λοιπόν!"),
+    # ("ko","안경"),
     # ("th","องค์กรเพื่อเสรีภาพของสัตว์และ(ราชสมาคมเพื่อการป้องกันการท)ารุณกรรมสัตว์  เรียกร้องอีกครั้งให้มีการบังคับติดตั้งกล้องวงจรปิดในโรงฆ่าสัตว์ทุกแห่งในออสเตรเลีย"),
     # ("zh", "我爱北京[天安门]，今天的天气真不错，气温大概是——二十五度。"), # Chinese (测试: 拼音/数字/声调)
     # ("de", "die dazu auffordert ein angebot bzw vorschläge"), 
     # ("vi", "“Ai tuyên truyền,  gieo rắc mê tín, tà tín ,tà kiến”."), # Vietnamese (测试: 声调符号/空格)
-    ("ja", "。。。 こんにちは、今日は天気がとても良いです。漢字とカタカナ、ひらがなが混ざっています。"), # Japanese (测试: 假名/汉字混合/长音/促音/拗音)
+    # ("ja", "。。。 こんにちは、今日は天気がとても良いです。漢字とカタカナ、ひらがなが混ざっています。"), # Japanese (测试: 假名/汉字混合/长音/促音/拗音)
     # ("ja", "東京タワーへ行こう！コーヒーを飲みながら話そう。"), # Japanese (测试: 促音ッ/长音ー/感叹符/片假名外来语)
     # ("ru", "Привет, как дела? Сегодня очень хороша́я погода!"), # Russian (测试: 重音符号/软音符号/感叹符/表情符号)
     # ("ru", "Москва́ – столица Росси́и. В ча́шке чай с мёдом и лимо́ном."), # Russian (测试: 软音符号ь/硬音符号ъ/连字符/重音/空格)

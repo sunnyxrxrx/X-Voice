@@ -60,7 +60,7 @@ def process_one(hypo, truth, normalizer):
     if lang[-2:] in ["zh", "ja", "ko","th"]:
         truth = " ".join([x for x in truth])
         hypo = " ".join([x for x in hypo]) # 中文hypo自带空格
-    if normalizer and lang[-2:] != "zh":
+    if normalizer:
         truth = normalizer.normalize(truth, post=True)
         hypo = normalizer.normalize(hypo, post=True)
     truth = truth.lower()

@@ -460,6 +460,7 @@ class DiT(nn.Module):
         language_ids: list[str] | torch.Tensor = None, # 在新逻辑里面，应该在外部就把lang_to_id做好，传进来一个tensor
         return_ctc: bool = False,
         layered: bool = False,
+        prompt_ids: torch.Tensor = None,
     ):
         batch, seq_len = x.shape[0], x.shape[1]
         if time.ndim == 0:
@@ -478,13 +479,16 @@ class DiT(nn.Module):
                 )
             else:
                 lang_ids_tensor = language_ids # 可能是 [b] 或 [b, nt]
+                prompt_ids_tensor = prompt_ids
 
-        def get_branch_inputs(d_audio, d_text, d_lang):
+        def get_branch_inputs(d_audio, d_text, d_lang, use_prompt_id=False, prompt_ids=None):
             curr_lang_ids = None
-            if lang_ids_tensor is not None:
+            if lang_ids_tensor is not None and not use_prompt_id:
                 curr_lang_ids = lang_ids_tensor.clone()
                 # if d_lang and self.drop_lang_in_time:
                 #     curr_lang_ids = torch.full_like(curr_lang_ids, self.num_languages)
+            elif use_prompt_id and prompt_ids is not None:
+                curr_lang_ids = prompt_ids_tensor.clone()
 
             t_branch = t.clone()
             if self.languages is not None and self.time_infill_lang_type in ["add_only", "time_concat"]:
@@ -512,9 +516,15 @@ class DiT(nn.Module):
             return x_embed, t_branch
                 
         
-        if cfg_infer and not layered:  # pack cond & uncond forward: b n d -> 2b n d
+        if cfg_infer and not layered and prompt_ids is None:  # pack cond & uncond forward: b n d -> 2b n d
             x_cond, t_cond = get_branch_inputs(False, False, False)
             x_uncond, t_uncond = get_branch_inputs(True, True, True)
+            x = torch.cat((x_cond, x_uncond), dim=0)
+            t = torch.cat((t_cond, t_uncond), dim=0)
+            mask = torch.cat((mask, mask), dim=0) if mask is not None else None
+        elif cfg_infer and not layered and prompt_ids is not None:
+            x_cond, t_cond = get_branch_inputs(False, False, False)
+            x_uncond, t_uncond = get_branch_inputs(True, True, True, use_prompt_id=True, prompt_ids=prompt_ids)
             x = torch.cat((x_cond, x_uncond), dim=0)
             t = torch.cat((t_cond, t_uncond), dim=0)
             mask = torch.cat((mask, mask), dim=0) if mask is not None else None

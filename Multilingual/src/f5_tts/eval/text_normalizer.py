@@ -113,7 +113,7 @@ class TextNormalizer:
                 return num2words(val, lang=lang)
 
         except Exception as e:
-            logger.error(f"num2words failed for [{number}] in {self.language}: {e}")
+            print(e)
             return number
 
     def normalize(self, text: str, post: bool=False, to=None) -> str:
@@ -148,9 +148,9 @@ class TextNormalizer:
 
 if __name__ == "__main__":
     
-    normalizer = TextNormalizer(language="et")    
+    normalizer = TextNormalizer(language="ca")    
     test_cases = [
-        "Tere hommikust! Eestis on palju ilusaid metsi 2026..."
+        "7 12 57 0 5 40"
         # "Đó cũng là lý do glucose gọi là \"đường huyết\"."
         # "kommen fünf vertriebsgemeinkosten zu schlag"
         # "Die Rechtsschutzversicherungsgesellschaften prüfen das Arbeiterunfallversicherungsgesetz.",

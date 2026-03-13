@@ -36,8 +36,15 @@ def get_testset_metainfo(data_dir, in_language, ref_language=None):
     else:
         prompt_scp = os.path.join(data_dir, "prompt_wav.scp")
         prompt_text_file = os.path.join(data_dir, "prompt_text") 
-        
-    target_text_file = os.path.join(data_dir, "text")     
+
+    # [lht] fix
+    if os.path.exists(os.path.join(data_dir, "text_fix_num")):
+        target_text_file = os.path.join(data_dir, "text_fix_num")
+    elif os.path.exists(os.path.join(data_dir, "text_fix")):
+        target_text_file = os.path.join(data_dir, "text_fix")
+    else:
+        print("未找到 text_fix_num 或 text_fix 文件")
+        target_text_file = os.path.join(data_dir, "text")     
 
     utt2wav = {}
     with open(prompt_scp, 'r', encoding='utf-8') as f:
@@ -320,7 +327,6 @@ def get_inference_prompt(
                     gt_text = ". " + gt_text
                 if not gt_text.endswith((".","。","?","？","!","！","...")):
                     gt_text += "."
-                print(gt_text)
                 # print(f"{gt_text}\n")
             ref_text_tokenized, gen_text_tokenized = None, None         
             if ref_language: # Cross-lingual
@@ -358,9 +364,10 @@ def get_inference_prompt(
             curr_gen_len = len(gen_text_tokenized)
             if drop_text:
                 text_list = [gen_text_tokenized]
-                # print(text_list)
+                print(text_list)
             elif reverse:
                 text_list = [gen_text_tokenized + ref_text_tokenized] # 两个列表相加
+                print(text_list)
             else:
                 text_list = [ref_text_tokenized + gen_text_tokenized]
 

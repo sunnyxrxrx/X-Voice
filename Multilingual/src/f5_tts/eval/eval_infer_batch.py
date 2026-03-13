@@ -35,10 +35,10 @@ from f5_tts.train.datasets.ipa_v4_tokenizer import PhonemizeTextTokenizer as Pho
 from f5_tts.train.datasets.ipa_v5_tokenizer import PhonemizeTextTokenizer as PhonemizeTextTokenizer_v5
 from f5_tts.train.datasets.ipa_v6_tokenizer import PhonemizeTextTokenizer as PhonemizeTextTokenizer_v6
 
-# import debugpy
-# debugpy.listen(('localhost', 5678))
-# print("Waiting for debugger attach")
-# debugpy.wait_for_client()
+import debugpy
+debugpy.listen(('localhost', 5678))
+print("Waiting for debugger attach")
+debugpy.wait_for_client()
 
 #accelerator = Accelerator(mixed_precision="fp16")
 accelerator = Accelerator()
@@ -78,6 +78,7 @@ def main():
     parser.add_argument("--decode_dir", default=None, type=str)
     parser.add_argument("--concat_method", default=1, type=int)
     parser.add_argument("--layered", action="store_true")
+    parser.add_argument("--prompt_v", action="store_true")
     parser.add_argument("--drop_text", action="store_true")
     
     parser.add_argument("--cross_lingual", action="store_true")
@@ -113,7 +114,7 @@ def main():
         "ko":"korean", "ja":"japanese", "ru":"russian",
         "ro":"romanian","hu":"hungarian","cs":"czech","fi":"finnish","hr":"croatian","sk":"slovak","sl":"slovenian","et":"estonian",
         "lt":"lthuanian","bg":"bulgarian","el":"greek","lv":"latvian","mt":"maltese","sv":"swedish","da":"danish",
-        "yue":"cantonese",
+        "yue":"cantonese", "ca":"catalan"
     }
     lang2in = {value: key for key, value in in2lang.items()}
     if args.languages == "all":
@@ -145,6 +146,7 @@ def main():
     cfg_strength = args.cfg_strength
     cfg_strength2 = args.cfg_strength2
     layered = args.layered
+    prompt_v = args.prompt_v
     speed = 1.0
     use_truth_duration = False
     no_ref_audio = False
@@ -245,14 +247,17 @@ def main():
         ref_ipa_tokenizer = None
         ref_language = None
         in_language_idx = lang_to_id.get(in_language, len(lang_to_id))
+        if in_language_idx == len(lang_to_id):
+            print(f"Not supported language: {in_language}, id will set to <unk>.")
         if tokenizer in tokenizer_class_map:
             ipa_id = get_ipa_id(in_language) 
             tokenizer_class = tokenizer_class_map[tokenizer]
-            ipa_tokenizer = tokenizer_class(language=ipa_id)
+            ipa_tokenizer = tokenizer_class(language=ipa_id, with_stress=False)
+            print("词表不加重音，否则请取消注释，包括下面")
             if cross_lingual:
                 ref_language= reference_languages[i]
                 ref_ipa_id = get_ipa_id(ref_language)
-                ref_ipa_tokenizer = tokenizer_class(language=ref_ipa_id)
+                ref_ipa_tokenizer = tokenizer_class(language=ref_ipa_id, with_stress=False)
                 ref_language_idx = lang_to_id.get(ref_language, len(lang_to_id))
         
         if testset == "ls_pc_test_clean":
@@ -356,6 +361,7 @@ def main():
                 total_mel_lens = torch.tensor(total_mel_lens, dtype=torch.long).to(device)
                 
                 batch_lang_ids = []
+                batch_prompt_lang_ids = []
                 for r_len, g_len in zip(ref_text_lens, gen_text_lens):
                     if cross_lingual and text_infill_lang_type in ["token_concat", "ada"]:
                         if concat_method == 1:
@@ -368,7 +374,14 @@ def main():
                     else:
                         ids = [in_language_idx] * r_len + [in_language_idx] * g_len
                     batch_lang_ids.append(torch.tensor(ids))
+                    if prompt_v:
+                        prompt_ids = [ref_language_idx] * (r_len + g_len)
+                        batch_prompt_lang_ids.append(torch.tensor(prompt_ids))
                 lang_ids_tensor = pad_sequence(batch_lang_ids, batch_first=True, padding_value=in_language_idx).to(device)
+                if prompt_v:
+                    prompt_lang_ids_tensor = pad_sequence(batch_prompt_lang_ids, batch_first=True, padding_value=ref_language_idx).to(device)
+                else:
+                    prompt_lang_ids_tensor = None
                 
                 # if infill_lang_type in ["add_only", "mixed_concat", "concat", "tkncat"]: # 如果使用add_only 或 concat，只能用之前的版本传入目标语言字符串
                 #     lang_ids_tensor = [in_language]
@@ -390,6 +403,7 @@ def main():
                         reverse=reverse,
                         cfg_strength2=cfg_strength2,
                         layered=layered,
+                        prompt_ids=prompt_lang_ids_tensor,
                     )
                     # Final result
                     for i, gen in enumerate(generated):

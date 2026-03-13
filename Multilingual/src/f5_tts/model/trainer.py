@@ -506,6 +506,7 @@ class Trainer:
                                 cfg_strength=cfg_strength,
                                 sway_sampling_coef=sway_sampling_coef,
                                 language_ids=infer_ids,
+                                infer_mode=False,
                             )
                             print(f"[debug]: Language is: {infer_ids}\nText is: {infer_text}")
                             generated = generated.to(torch.float32)

@@ -137,8 +137,10 @@ class CustomDataset(Dataset):
             language_id = row.get("language_id", "en") 
             if self.root_dir and not os.path.isabs(audio_path):
                 audio_path = os.path.join(self.root_dir, audio_path)
-            if 0.3 <= duration <= 30:
-                break  
+            if 0.3 <= duration <= 30 and "EN_B00055_S00943_W000008" not in audio_path:
+                break
+            elif "EN_B00055_S00943_W000008" in audio_path:
+                print(f"{audio_path} is invalid, skipping.")
             
             index = (index + 1) % len(self.data)
         

@@ -11,7 +11,7 @@ from f5_tts.model.dataset import load_dataset
 from f5_tts.model.utils import get_tokenizer
 
 # import debugpy
-# debugpy.listen(('localhost', 12345))
+# debugpy.listen(('localhost', 5678))
 # print("Waiting for debugger attach")
 # debugpy.wait_for_client()
 

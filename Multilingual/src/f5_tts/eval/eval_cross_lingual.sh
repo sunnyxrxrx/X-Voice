@@ -2,17 +2,18 @@
 # bash src/f5_tts/eval/eval_cross_lingual.sh
 asr_gpu=2
 task=zero_shot
-dataset=lemas_eval_new # lemas_eval, cv3_eval, lemas_eval_new
+dataset=lemas_eval # lemas_eval, cv3_eval, lemas_eval_new
 ckpt=600000
 exp_name=F5TTS_v1_Base_multilingual_full_catada # M3TTS_Small_multilingual_v1
-test_set="en zh fr" # da el es et fi fr hr hu id it lt mt nl pl pt sk sl sv th de" #cs da el es et fi fr ko" 
-ref_set="fr en zh"
+test_set="zh" # da el es et fi fr hr hu id it lt mt nl pl pt sk sl sv th de" #cs da el es et fi fr ko" 
+ref_set="en"
 
 concat_method=2
 seed=0
 nfe=16
-cfg_strength=5.0
+cfg_strength=2.0
 layered=False
+prompt_v=False # 暂时不用
 cfg_strength2=4.0
 
 test_langs=($test_set)
@@ -31,9 +32,9 @@ if [ "$layered" = "True" ]; then
     accelerate launch --main_process_port 29507 src/f5_tts/eval/eval_infer_batch.py \
         -s ${seed} -n "${exp_name}" -c ${ckpt} -t "${dataset}" -nfe ${nfe} -l "${test_set// /,}" \
         --cfg_strength ${cfg_strength} --layered --cfg_strength2 ${cfg_strength2} \
-        --normalize_text --sp_type "pretrained" --concat_method ${concat_method} \
+        --normalize_text --sp_type "syllable" --concat_method ${concat_method} \
         --cross_lingual -rl "${ref_set// /,}" \
-        --drop_text --decode_dir "${decode_dir}" -ns "SpeedPredict_Base" -cs 20000 # --reverse
+        --decode_dir "${decode_dir}" # -ns "SpeedPredict_Base" -cs 20000 # --reverse
 
 else
     decode_dir="${PROJECT_ROOT}/results/${exp_name}_${ckpt}/${dataset}/seed${seed}_concat${concat_method}_euler_nfe${nfe}_vocos_ss-1_cfg${cfg_strength}_speed1.0zero_shot"
@@ -41,9 +42,9 @@ else
     accelerate launch --main_process_port 29508 src/f5_tts/eval/eval_infer_batch.py \
         -s ${seed} -n "${exp_name}" -c ${ckpt} -t "${dataset}" -nfe ${nfe} -l "${test_set// /,}" \
         --cfg_strength ${cfg_strength} \
-        --normalize_text --sp_type "pretrained" --concat_method ${concat_method} \
+        --normalize_text --sp_type "syllable" --concat_method ${concat_method} \
         --cross_lingual -rl "${ref_set// /,}" \
-        --drop_text --decode_dir "${decode_dir}" -ns "SpeedPredict_Base" -cs 20000 # --reverse 
+        --decode_dir "${decode_dir}" # -ns "SpeedPredict_Base" -cs 20000 # --reverse 
 fi
 
 

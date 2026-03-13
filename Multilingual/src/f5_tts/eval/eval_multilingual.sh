@@ -36,7 +36,7 @@ else
         --cfg_strength ${cfg_strength} --cfg_schedule "${cfg_schedule}" --cfg_decay_time ${cfg_decay_time} \
         --normalize_text --sp_type "syllable" \
         --decode_dir "${decode_dir}" # -ns "SpeedPredict_Base" -cs 20000 --reverse  
-
+fi
 
 
 # Evaluation
