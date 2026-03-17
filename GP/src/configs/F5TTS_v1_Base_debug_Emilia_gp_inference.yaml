@@ -9,7 +9,7 @@ datasets:
 source:
   expname: F5TTS_v1_Base_debug_Emilia_pinyin
   ckptstep: 2
-  frac_lengths_mask: [0.2, 0.4]
+  frac_lengths_mask: [0.1, 0.4]
 
 infer:
   nfe_step: 32
