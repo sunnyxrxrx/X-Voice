@@ -530,7 +530,7 @@ class DiT(nn.Module):
             mask = torch.cat((mask, mask), dim=0) if mask is not None else None
         elif cfg_infer and layered:
             x_cond, t_cond = get_branch_inputs(False, False, False) # 都不drop
-            x_text, t_text = get_branch_inputs(False, False, True) # drop 语种
+            x_text, t_text = get_branch_inputs(True, False, False) # drop 语种
             x_uncond, t_uncond = get_branch_inputs(True, True, True) # drop 三个
             x = torch.cat((x_cond, x_text, x_uncond), dim=0)
             t = torch.cat((t_cond, t_text, t_uncond), dim=0)

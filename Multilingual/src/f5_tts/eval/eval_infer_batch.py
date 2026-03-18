@@ -114,7 +114,7 @@ def main():
         "ko":"korean", "ja":"japanese", "ru":"russian",
         "ro":"romanian","hu":"hungarian","cs":"czech","fi":"finnish","hr":"croatian","sk":"slovak","sl":"slovenian","et":"estonian",
         "lt":"lthuanian","bg":"bulgarian","el":"greek","lv":"latvian","mt":"maltese","sv":"swedish","da":"danish",
-        "yue":"cantonese", "ca":"catalan"
+        "yue":"cantonese", "ca":"catalan", "cy": "welsh", "mk": "macedonian"
     }
     lang2in = {value: key for key, value in in2lang.items()}
     if args.languages == "all":
@@ -129,6 +129,7 @@ def main():
                 target_languages.append(lang2in[language])
             else:
                 print(f"Not supported {language}")
+                # target_languages.append(language)
                 continue
     if cross_lingual:
         reference_languages = []
@@ -252,12 +253,12 @@ def main():
         if tokenizer in tokenizer_class_map:
             ipa_id = get_ipa_id(in_language) 
             tokenizer_class = tokenizer_class_map[tokenizer]
-            ipa_tokenizer = tokenizer_class(language=ipa_id, with_stress=False)
-            print("词表不加重音，否则请取消注释，包括下面")
+            ipa_tokenizer = tokenizer_class(language=ipa_id, with_stress=True)
+            # print("不加重音，否则请取消注释，包括下一行")
             if cross_lingual:
                 ref_language= reference_languages[i]
                 ref_ipa_id = get_ipa_id(ref_language)
-                ref_ipa_tokenizer = tokenizer_class(language=ref_ipa_id, with_stress=False)
+                ref_ipa_tokenizer = tokenizer_class(language=ref_ipa_id, with_stress=True)
                 ref_language_idx = lang_to_id.get(ref_language, len(lang_to_id))
         
         if testset == "ls_pc_test_clean":
@@ -372,6 +373,9 @@ def main():
                             unk_idx = len(lang_to_id)
                             ids = [unk_idx] * r_len + [in_language_idx] * g_len
                     else:
+                        # print("测试，inferbatch369行")
+                        # unk_idx = len(lang_to_id)
+                        # ids = [unk_idx] * r_len + [unk_idx] * g_len
                         ids = [in_language_idx] * r_len + [in_language_idx] * g_len
                     batch_lang_ids.append(torch.tensor(ids))
                     if prompt_v:
