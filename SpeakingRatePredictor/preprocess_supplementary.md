@@ -28,7 +28,7 @@ def check_valid_chars(input_str):
 ```
 
 ## syllables计算
-1. 先用`pyphen.Pyphen`计算过滤后符合要求sample的syllable数（特殊符号 和。标点符号不包括在音节里）
+1. 先用`pyphen.Pyphen`计算过滤后符合要求sample的syllable数（特殊符号 和 标点符号不包括在音节计算里）
 2. 然后用map_to_class转换成离散类别
    ```py
    def map_to_class(speed, delta=0.25):
