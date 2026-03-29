@@ -1,26 +1,33 @@
 import math
 import os
+import sys
 import random
 import string
 from pathlib import Path
+import re
+from importlib.resources import files
 
 import torch
 import torch.nn.functional as F
 import torchaudio
 from tqdm import tqdm
-import pyphen
-
-import unicodedata
-import re
 
 from f5_tts.eval.ecapa_tdnn import ECAPA_TDNN_SMALL
 from f5_tts.model.modules import MelSpec
 from f5_tts.model.utils import convert_char_to_pinyin, str_to_list_ipa_all
-
-# from nemo_text_processing.text_normalization.normalize import Normalizer
 from f5_tts.eval.text_normalizer import TextNormalizer
 import pickle
 import pyphen
+import unicodedata
+from pythainlp.tokenize import syllable_tokenize
+
+SPEAKING_RATE_ROOT = Path(__file__).resolve().parents[4]
+print(SPEAKING_RATE_ROOT)
+MAVL_ROOT = SPEAKING_RATE_ROOT / "MAVL"
+if str(MAVL_ROOT) not in sys.path:
+    sys.path.insert(0, str(MAVL_ROOT))
+
+from process_syllable.japanese import split_syllables as ja_split_syllables
 
 def get_testset_metainfo(data_dir, in_language, ref_language=None, drop_text=False):
     """
@@ -142,113 +149,97 @@ def padded_mel_batch(ref_mels):
     padded_ref_mels = padded_ref_mels.permute(0, 2, 1)
     return padded_ref_mels
 
-def count(text):
-    def count_syllables(text):
-        dic = pyphen.Pyphen(lang='en_US')
-        total_syllables = 0
-        
-        # Define the regular expression
-        #   [a-zA-Z']+  Matches one or more English letters or apostrophes (to handle words like "don't", "haven't")
-        #   [\u4e00-\u9fff] Matches a single Chinese character
-        pattern = re.compile(r"[a-zA-Z']+|[\u4e00-\u9fff]")
-        tokens = pattern.findall(text)
-        
-        for token in tokens:
-            if '\u4e00' <= token <= '\u9fff':
-                total_syllables += 1
-            else:
-                try:
-                    syllables = dic.inserted(token.lower()).split("-")
-                    total_syllables += len(syllables)
-                except Exception:
-                    total_syllables += 1
-                    
-        return total_syllables
 
-    def count_punctuations(text):
-        punct_map = {
-            '.': 1.5, '!': 1.5, '?': 1.5,
-            ',': 0.7, ';': 1.0, ':': 1.0,
-            '。': 1.3, '！': 1.3, '？': 1.3,
-            '，': 0.6, '；': 0.8, '：': 0.8,
-        }
-        punct_syllables = 0
-        for char in text:
-            if char in punct_map:
-                punct_syllables += punct_map[char]
-        return punct_syllables
-    
-    return round(count_syllables(text) + count_punctuations(text))
 # get prompts from metainfo containing: utt, prompt_text, prompt_wav, gt_text, gt_wav
-
+# copied from SpeakingRatePredictor/src/model/utils.py
 PYPHEN_LANG_MAP = {
-    "bg": "bg_BG", # 保加利亚语
-    "cs": "cs_CZ", # 捷克语
-    "da": "da_DK", # 丹麦语
-    "de": "de_DE", # 德语
-    "el": "el_GR", # 希腊语
-    "en": "en_US", # 英语
-    "es": "es_ES", # 西班牙语
-    "et": "et_EE", # 爱沙尼亚语
-    "fi": "fi_FI", # 芬兰语
-    "fr": "fr_FR", # 法语
-    "hr": "hr_HR", # 克罗地亚语
-    "hu": "hu_HU", # 匈牙利语
-    "id": "id_ID", # 印尼语
-    "it": "it_IT", # 意大利语
-    "lt": "lt_LT", # 立陶宛语
-    "lv": "lv_LV", # 拉脱维亚语
-    "mt": "mt_MT", # 马耳他语 (如果没有字典会自动回退)
-    "nl": "nl_NL", # 荷兰语
-    "pl": "pl_PL", # 波兰语
-    "pt": "pt_PT", # 葡萄牙语
-    "ro": "ro_RO", # 罗马尼亚语
-    "ru": "ru_RU", # 俄语
-    "sk": "sk_SK", # 斯洛伐克语
-    "sl": "sl_SI", # 斯洛文尼亚语
-    "sv": "sv_SE", # 瑞典语
+    "bg": "bg_BG",
+    "cs": "cs_CZ",
+    "da": "da_DK",
+    "de": "de_DE",
+    "el": "el_GR",
+    "en": "en_US",
+    "es": "es_ES",
+    "et": "et_EE",
+    "fi": "fi_FI",
+    "fr": "fr_FR",
+    "hr": "hr_HR",
+    "hu": "hu_HU",
+    "id": "id_ID",
+    "it": "it_IT",
+    "lt": "lt_LT",
+    "lv": "lv_LV",
+    "mt": "mt_MT",
+    "nl": "nl_NL",
+    "pl": "pl_PL",
+    "pt": "pt_PT",
+    "ro": "ro_RO",
+    "ru": "ru_RU",
+    "sk": "sk_SK",
+    "sl": "sl_SI",
+    "sv": "sv_SE",
 }
 
 _PYPHEN_CACHE = {}
 
-def get_syllable_count(text: str, lang: str) -> int:
-    """
-    计算文本音节数。
-    - 中文/日文/韩文 (CJK): 按字符数计算
-    - 其他语言: 使用 pyphen 连字符算法计算
-    """
+def extract_pyphen_text(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text)
+    tokens = re.findall(r"[^\W\d_]+(?:['’][^\W\d_]+)*", text, flags=re.UNICODE)
+    return " ".join(tokens)
+
+
+def count_syllables(text: str, lang: str) -> int:
     if not text:
         return 0
-        
-    if lang in ["zh", "ja", "ko", "th", "yue"]:
-        # 简单清洗一下，只算有效字符
-        clean_text = re.sub(r"\s+", "", text) 
-        # print(clean_text, len(clean_text))
-        return len(clean_text)
-    
+
+    if lang in {"zh", "yue"}:
+        return len(re.findall(r"[\u4e00-\u9fff]", text))
+
+    if lang == "ko":
+        return len(re.findall(r"[\uac00-\ud7a3]", text))
+
+    if lang == "th":
+        clean_text = "".join(
+            ch
+            for ch in text
+            if unicodedata.category(ch)[0] in {"L", "M"} or ch.isspace()
+        )
+        try:
+            tokens = syllable_tokenize(clean_text)
+            return len(tokens) if tokens else 0
+        except Exception as e:
+            print(f"Failed to process {text}\n{e}")
+            return 0
+
+    if lang == "ja":
+        _, count = ja_split_syllables(text)
+        return count
+
     if lang == "vi":
-        return len(text.split())
-    # 获取 Pyphen 对应的字典代码
-    pyphen_lang = PYPHEN_LANG_MAP.get(lang, "en_US") # 默认回退到英语规则
+        text = unicodedata.normalize("NFKC", text)
+        tokens = re.findall(r"[^\W\d_]+(?:['’][^\W\d_]+)*", text, flags=re.UNICODE)
+        return len(tokens)
+
+    clean_text = extract_pyphen_text(text)
+    if not clean_text:
+        return 0
+
+    pyphen_lang = PYPHEN_LANG_MAP.get(lang, "en_US")
     if pyphen_lang not in _PYPHEN_CACHE:
         try:
             _PYPHEN_CACHE[pyphen_lang] = pyphen.Pyphen(lang=pyphen_lang)
         except Exception:
-            # 如果加载失败（比如不支持的语言），回退到英语通用规则
             if "en_US" not in _PYPHEN_CACHE:
                 _PYPHEN_CACHE["en_US"] = pyphen.Pyphen(lang="en_US")
             pyphen_lang = "en_US"
+
     dic = _PYPHEN_CACHE[pyphen_lang]
-    # Pyphen 的 inserted 方法会在音节间插入连字符，例如 "hello" -> "hel-lo"
-    # 我们分割连字符并计算数量；先分词，再对每个词算音节
-    count = 0
-    words = text.split()
-    for word in words:
-        if not word.strip(): continue
-        # inserted 返回 "hy-phen-a-tion"
-        syllables = dic.inserted(word).split('-')
-        count += len(syllables) 
-    return count
+    total = 0
+    for word in clean_text.split():
+        if word:
+            total += len(dic.inserted(word).split("-"))
+    return total
+
 
 def get_inference_prompt(
     metainfo,
@@ -400,7 +391,7 @@ def get_inference_prompt(
             else:
                 if sp_type == "pretrained":
                     assert model_sp is not None
-                    gt_num_unit = count(gt_text)
+                    gt_num_unit = count_syllables(gt_text, language)
                     ref_mel_t = ref_mel.unsqueeze(0).permute(0, 2, 1)
                     ref_mel_tensor = ref_mel_t.to(device)
                     ref_mel_len_tensor = torch.tensor([ref_mel_len], dtype=torch.long).to(device)
@@ -419,10 +410,10 @@ def get_inference_prompt(
                     #     text_list = [[" "] * int(ref_est * 1.1) + [".", " ", ".", " "] + text_list[0]] 
                 elif sp_type == "syllable":
                     if ref_language:
-                        ref_syllables = get_syllable_count(prompt_text, ref_language)
+                        ref_syllables = count_syllables(prompt_text, ref_language)
                     else:
-                        ref_syllables = get_syllable_count(prompt_text, language)
-                    gen_syllables = get_syllable_count(gt_text, language)
+                        ref_syllables = count_syllables(prompt_text, language)
+                    gen_syllables = count_syllables(gt_text, language)
                     if ref_syllables == 0:
                         ref_syllables = 1
                     gen_mel_len = int(ref_mel_len * (gen_syllables / ref_syllables) / speed)

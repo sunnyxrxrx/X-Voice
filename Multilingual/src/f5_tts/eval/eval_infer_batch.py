@@ -26,7 +26,7 @@ from f5_tts.eval.utils_eval import (
 from f5_tts.infer.utils_infer import load_checkpoint, load_vocoder
 from f5_tts.model import CFM, CFM_SFT
 from f5_tts.model.utils import get_tokenizer, get_ipa_id
-from f5_tts.eval.module_clf5 import SpeedPredictor
+from f5_tts.eval.speaking_rate_predictor import SpeedPredictor
 
 from f5_tts.train.datasets.ipa_tokenizer import PhonemizeTextTokenizer
 from f5_tts.train.datasets.ipa_v2_tokenizer import PhonemizeTextTokenizer as PhonemizeTextTokenizer_v2
