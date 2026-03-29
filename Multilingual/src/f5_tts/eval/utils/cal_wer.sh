@@ -12,7 +12,7 @@ score_file=$output_dir/wav_res_ref_text.wer
 workdir=$(cd $(dirname $0); cd ../; pwd)
 
 if [ "$test_gt" == "true" ]; then
-    target_wav_dir="$output_dir/waveform"
+    target_wav_dir="$output_dir/ground_truth"
     echo "DEBUG: Testing GT Mode. Wav Dir: $target_wav_dir"
     python3 utils/get_wav_res_ref_text_gt.py "$meta_lst" "$target_wav_dir" "$wav_wav_text"
 else

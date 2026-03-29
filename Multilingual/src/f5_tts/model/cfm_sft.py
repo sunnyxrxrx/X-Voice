@@ -1,3 +1,5 @@
+# 二阶段请在全局conig用cfm_sft.py
+
 """
 ein notation:
 b - batch
@@ -380,6 +382,7 @@ class CFM_SFT(nn.Module):
                 prefix_token_id=prefix_token_id,
                 anchor_token_ids=anchor_token_ids,
             )
+            time_language_ids = language_ids.clone()
             language_ids = build_prefixed_language_ids(
                 text=base_text,
                 total_lens=lens,
@@ -433,7 +436,7 @@ class CFM_SFT(nn.Module):
             pred, ctc_logits = self.transformer(
                 x=φ, cond=cond, text=text, time=time, 
                 drop_audio_cond=drop_audio_cond, drop_text=drop_text, drop_lang=drop_lang,
-                mask=mask, language_ids=language_ids,
+                mask=mask, language_ids=language_ids, time_language_ids=time_language_ids,
                 return_ctc=True,
             )
         else:
@@ -442,7 +445,7 @@ class CFM_SFT(nn.Module):
             pred = self.transformer(
                 x=φ, cond=cond, text=text, time=time, 
                 drop_audio_cond=drop_audio_cond, drop_text=drop_text, drop_lang=drop_lang,
-                mask=mask, language_ids=language_ids,
+                mask=mask, language_ids=language_ids, time_language_ids=time_language_ids,
                 return_ctc=False,
             )
 

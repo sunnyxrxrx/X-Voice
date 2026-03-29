@@ -5,6 +5,8 @@ import json
 import os
 import sys
 import multiprocessing as mp
+# 新增：导入spawn上下文（核心修复）
+from multiprocessing import get_context
 from importlib.resources import files
 
 import numpy as np
@@ -40,10 +42,10 @@ def main():
     local = args.local
     if local:  # use local custom checkpoint dir
         if lang == "zh":
-            asr_ckpt_dir = "../checkpoints/funasr"  # paraformer-zh dir under funasr
+            asr_ckpt_dir = os.path.abspath(rel_path+"/../../paraformer")
         elif lang == "en":
-            asr_ckpt_dir = os.path.abspath(rel_path+"/../faster-whisper-large-v3")
-            print(f"ASR from: {asr_ckpt_dir}")
+            asr_ckpt_dir = os.path.abspath(rel_path+"/../../faster-whisper-large-v3")
+        print(f"ASR from: {asr_ckpt_dir}")
     else:
         asr_ckpt_dir = ""  # auto download to cache dir
     wavlm_ckpt_dir = os.path.abspath(os.path.join(rel_path, "wavlm_large_finetune.pth"))
@@ -54,13 +56,15 @@ def main():
     metrics = []
 
     if eval_task == "wer":
-        with mp.Pool(processes=len(gpus)) as pool:
+        # 核心修复：替换为 spawn 模式进程池（兼容CUDA）
+        with get_context('spawn').Pool(processes=len(gpus)) as pool:
             args = [(rank, lang, sub_test_set, asr_ckpt_dir) for (rank, sub_test_set) in test_set]
             results = pool.map(run_asr_wer, args)
             for r in results:
                 full_results.extend(r)
     elif eval_task == "sim":
-        with mp.Pool(processes=len(gpus)) as pool:
+        # 核心修复：替换为 spawn 模式进程池（兼容CUDA）
+        with get_context('spawn').Pool(processes=len(gpus)) as pool:
             args = [(rank, sub_test_set, wavlm_ckpt_dir) for (rank, sub_test_set) in test_set]
             results = pool.map(run_sim, args)
             for r in results:

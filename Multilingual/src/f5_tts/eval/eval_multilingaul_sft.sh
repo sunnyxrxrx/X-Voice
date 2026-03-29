@@ -1,21 +1,21 @@
 # 修改这里的配置
-# bash src/f5_tts/eval/eval_multilingual.sh
+# bash src/f5_tts/eval/eval_multilingual_sft.sh
 asr_gpu=8
 task=zero_shot
-dataset=mixed_eval_with_gt # lemas_eval, mixed_eval_with_gt
-ckpt=600000
-exp_name=F5TTS_v1_Base_multilingual_full_catada_stress_nomask 
-# test_set="zh" 
-test_set="cs da de el en es et fi fr hu hr id it ja ko lt lv mt nl pl pt ro sk sl sv th vi ru zh"
+dataset=mixed_eval_with_gt # lemas_eval, mixed_eval, lemas_eval_new
+ckpt=100000
+exp_name=F5TTS_v1_Base_multilingual_full_catada_sft # M3TTS_Small_multilingual_v1
+test_set="zh" #hu id it ja ko lt lv mt nl pl pt ro ru sk sl sv th vi zh" # da el es et fi fr hr hu id it lt mt nl pl pt sk sl sv th de" #cs da el es et fi fr ko" 
+# test_set="bg cs da de el en es et fi fr hu hr id it ja ko lt lv mt nl pl pt ro sk sl sv th vi ru" # en fr pt es de it vi ru id"
 
 
 seed=0
 nfe=16
-sp_type=utf
+sp_type=pretrained
 cfg_schedule=linear
 cfg_decay_time=0.6
-cfg_strength=4.0
-layered=False
+cfg_strength=2.5
+layered=True
 cfg_strength2=4.0
 
 
@@ -25,12 +25,13 @@ cv3_dir="${PROJECT_ROOT}/data/${dataset}"
 
 if [ "$layered" = "True" ]; then
     decode_dir="${PROJECT_ROOT}/results/${exp_name}_${ckpt}/${dataset}/${sp_type}_seed${seed}_concat${concat_method}_schedule${cfg_schedule}_euler_nfe${nfe}_vocos_ss-1_cfgI${cfg_strength}_cfgII${cfg_strength2}_speed1.0zero_shot"
-    accelerate launch --main_process_port 29507 src/f5_tts/eval/eval_infer_batch.py \
+    accelerate launch --main_process_port 29508 src/f5_tts/eval/eval_infer_batch.py \
         -s ${seed} -n "${exp_name}" -c ${ckpt} -t "${dataset}" -nfe ${nfe} -l "${test_set// /,}" \
         --cfg_strength ${cfg_strength} --layered --cfg_strength2 ${cfg_strength2} --cfg_schedule "${cfg_schedule}" --cfg_decay_time ${cfg_decay_time} \
         --normalize_text \
         --decode_dir "${decode_dir}" \
-        --sp_type ${sp_type} #-ns "SpeedPredict_Base" -cs 20000 #--reverse 
+        --drop_text \
+        --sp_type ${sp_type}  -ns "SpeedPredict_Base" -cs 20000  #--reverse 
 else
     decode_dir="${PROJECT_ROOT}/results/${exp_name}_${ckpt}/${dataset}/${sp_type}_seed${seed}_concat${concat_method}_schedule${cfg_schedule}_euler_nfe${nfe}_vocos_ss-1_cfg${cfg_strength}_speed1.0zero_shot"
     # Inference
@@ -39,6 +40,7 @@ else
         --cfg_strength ${cfg_strength} --cfg_schedule "${cfg_schedule}" --cfg_decay_time ${cfg_decay_time} \
         --normalize_text \
         --decode_dir "${decode_dir}" \
+        --drop_text \
         --sp_type ${sp_type} # -ns "SpeedPredict_Base" -cs 20000 #--reverse 
 fi
 
@@ -75,7 +77,7 @@ for lang in ${test_set}; do
     echo "[INFO] Scoring UTSMOS  for ${decode_dir}/${lang}"  
     python eval_utmos.py --audio_dir ${decode_dir}/${lang} --ext "wav"
 
-    # # DNSMOS
+    # # # DNSMOS
     # echo "[INFO] Scoring DNSMOS  for ${decode_dir}/${lang}"  
     # python ${DNSMOS_LAB}/dnsmos_local_wavscp.py -t ${decode_dir}/${lang}/wav.scp -e ${DNSMOS_LAB} -o ${decode_dir}/${lang}/mos.csv
     # cat ${decode_dir}/${lang}/mos.csv | sed '1d' |awk -F ',' '{ sum += $NF; count++ } END { if (count > 0) print sum / count }'  > ${decode_dir}/${lang}/dnsmos_mean.txt

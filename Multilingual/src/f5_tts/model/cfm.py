@@ -164,8 +164,24 @@ class CFM(nn.Module):
             test_cond = F.pad(cond, (0, 0, cond_seq_len, max_duration - 2 * cond_seq_len), value=0.0)
 
         if reverse:
-            cond = F.pad(cond, (0, 0, max_duration - cond_seq_len, 0), value=0.0)
-            cond_mask = F.pad(cond_mask, (max_duration - cond_mask.shape[-1], 0), value=False)
+            # 原逻辑
+            # cond = F.pad(cond, (0, 0, max_duration - cond_seq_len, 0), value=0.0)
+            # cond_mask = F.pad(cond_mask, (max_duration - cond_mask.shape[-1], 0), value=False)
+            # 修正后
+            full_cond = torch.zeros((batch, max_duration, self.num_channels), device=device, dtype=cond.dtype)
+            cond_mask = torch.zeros((batch, max_duration), device=device, dtype=torch.bool)
+            for b in range(batch):
+                curr_ref_len = lens[b] if lens is not None else cond_seq_len
+                curr_total_len = duration[b]
+                gen_len = curr_total_len - curr_ref_len
+                # 把 Reference 填入到最后
+                # 形状: [Ref_Len, Dim]
+                full_cond[b, gen_len:curr_total_len, :] = cond[b, :curr_ref_len, :]
+                
+                # Mask: 前面生成的为 False (需要预测)，后面 Ref 为 True (固定)
+                # F5-TTS 的 cond_mask 含义: True = 固定/已知, False = 未知/生成
+                cond_mask[b, gen_len:curr_total_len] = True
+            cond = full_cond
         else:
             cond = F.pad(cond, (0, 0, 0, max_duration - cond_seq_len), value=0.0)
             cond_mask = F.pad(cond_mask, (0, max_duration - cond_mask.shape[-1]), value=False)

@@ -22,7 +22,7 @@ from f5_tts.eval.text_normalizer import TextNormalizer
 import pickle
 import pyphen
 
-def get_testset_metainfo(data_dir, in_language, ref_language=None):
+def get_testset_metainfo(data_dir, in_language, ref_language=None, drop_text=False):
     """
     data_dir goes to: cv3_eval/zero_shot/[in_language] 
     metainfo: List[Tuple(utt_id, prompt_wav_path, prompt_text, target_text)]
@@ -30,12 +30,21 @@ def get_testset_metainfo(data_dir, in_language, ref_language=None):
     path_parts = data_dir.split("/")
     data_idx = path_parts.index("zero_shot")
     root_dir = "/".join(path_parts[:data_idx])
-    if ref_language:
-        prompt_scp = os.path.join(root_dir, "zero_shot", ref_language, "prompt_wav.scp")
-        prompt_text_file = os.path.join(root_dir, "zero_shot", ref_language, "prompt_text") 
-    else:
-        prompt_scp = os.path.join(data_dir, "prompt_wav.scp")
-        prompt_text_file = os.path.join(data_dir, "prompt_text") 
+    print("由于没有比较好的语速预测器，现在使用syllable/utf预测时长，故强行设置drop_text为false，否则请注释下一行")
+    drop_text = False
+    if drop_text:
+        if ref_language:
+            prompt_scp = os.path.join(root_dir, "zero_shot", ref_language, "prompt_wav.scp")
+        else:
+            prompt_scp = os.path.join(data_dir, "prompt_wav.scp")
+        prompt_text_file = None
+    else:       
+        if ref_language:
+            prompt_scp = os.path.join(root_dir, "zero_shot", ref_language, "prompt_wav.scp")
+            prompt_text_file = os.path.join(root_dir, "zero_shot", ref_language, "prompt_text") 
+        else:
+            prompt_scp = os.path.join(data_dir, "prompt_wav.scp")
+            prompt_text_file = os.path.join(data_dir, "prompt_text") 
 
     # [lht] fix
     if os.path.exists(os.path.join(data_dir, "text_fix_num")):
@@ -64,17 +73,18 @@ def get_testset_metainfo(data_dir, in_language, ref_language=None):
                 
     # load prompt text
     utt2prompt = {}
-    with open(prompt_text_file, 'r', encoding='utf-8') as f:
-        for line in f:
-            parts = line.strip().split(maxsplit=1)
-            if len(parts) >= 2:
-                utt2prompt[parts[0]] = parts[1]
+    if not drop_text:
+        with open(prompt_text_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                parts = line.strip().split(maxsplit=1)
+                if len(parts) >= 2:
+                    utt2prompt[parts[0]] = parts[1]
     
     metainfo = []
     for utt_id, wav_path in utt2wav.items():
         if utt_id in utt2text:
             target_text = utt2text[utt_id]
-            prompt_text = utt2prompt[utt_id] 
+            prompt_text = utt2prompt.get(utt_id, None) 
             wav_path_clean = wav_path.replace("data/", "", 1)  
             full_wav_path = os.path.join(root_dir, wav_path_clean)
             metainfo.append((utt_id, prompt_text, full_wav_path, target_text))
@@ -364,10 +374,10 @@ def get_inference_prompt(
             curr_gen_len = len(gen_text_tokenized)
             if drop_text:
                 text_list = [gen_text_tokenized]
-                print(text_list)
+                # print(text_list)
             elif reverse:
                 text_list = [gen_text_tokenized + ref_text_tokenized] # 两个列表相加
-                print(text_list)
+                # print(text_list)
             else:
                 text_list = [ref_text_tokenized + gen_text_tokenized]
 
@@ -403,10 +413,10 @@ def get_inference_prompt(
                     gen_mel_len = int((pred_duration * target_sample_rate) / hop_length)
                     total_mel_len = ref_mel_len + gen_mel_len
                     
-                    if drop_text:
-                        # gen_est = len(gen_text_tokenized)
-                        ref_est = int(gt_num_unit / gen_mel_len * ref_mel_len)
-                        text_list = [[" "] * int(ref_est * 1.1) + [".", " ", ".", " "] + text_list[0]] 
+                    # if drop_text:
+                    #     # gen_est = len(gen_text_tokenized)
+                    #     ref_est = int(gt_num_unit / gen_mel_len * ref_mel_len)
+                    #     text_list = [[" "] * int(ref_est * 1.1) + [".", " ", ".", " "] + text_list[0]] 
                 elif sp_type == "syllable":
                     if ref_language:
                         ref_syllables = get_syllable_count(prompt_text, ref_language)
@@ -572,7 +582,7 @@ def load_asr_model(lang, ckpt_dir=""):
         from funasr import AutoModel
 
         model = AutoModel(
-            model=os.path.join(ckpt_dir, "paraformer-zh"),
+            model=ckpt_dir, #os.path.join(ckpt_dir, "paraformer-zh"),
             # vad_model = os.path.join(ckpt_dir, "fsmn-vad"),
             # punc_model = os.path.join(ckpt_dir, "ct-punc"),
             # spk_model = os.path.join(ckpt_dir, "cam++"),

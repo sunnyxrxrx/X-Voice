@@ -176,6 +176,7 @@ class CustomDataset_sft(Dataset):
         root_dir = None,
         durations=None,
         prompt_frames=None,
+        frame_duration=False,
         target_sample_rate=24_000,
         hop_length=256,
         n_mel_channels=100,
@@ -195,6 +196,7 @@ class CustomDataset_sft(Dataset):
         self.mel_spec_type = mel_spec_type
         self.preprocessed_mel = preprocessed_mel
         self.root_dir = root_dir
+        self.frame_duration = frame_duration
 
         if not preprocessed_mel:
             self.mel_spectrogram = default(
@@ -210,7 +212,9 @@ class CustomDataset_sft(Dataset):
             )
 
     def get_frame_len(self, index):
-        if self.durations is not None and self.prompt_frames is not None:
+        if self.durations is not None and self.frame_duration:
+            return self.durations[index]
+        elif self.durations is not None and self.prompt_frames is not None:
             orig_frames = self.durations[index] * self.target_sample_rate / self.hop_length
             return orig_frames + self.prompt_frames[index]
         elif (
@@ -231,7 +235,7 @@ class CustomDataset_sft(Dataset):
             row = self.data[index]
             audio_path = row["audio_path"]
             text = row["text"]
-            total_text = row["total_text"]
+            total_text = row.get("total_text", text)
             duration = row["duration"]
             prompt_path = row["prompt_path"]
             prompt_frames = row["prompt_frames"]
@@ -370,6 +374,7 @@ def load_dataset(
     sft: bool = False,
     mel_spec_module: nn.Module | None = None,
     mel_spec_kwargs: dict = dict(),
+    frame_duration: bool = False,
 ) -> CustomDataset | HFDataset:
     """
     dataset_type    - "CustomDataset" if you want to use tokenizer name and default data path to load for train_dataset
@@ -393,14 +398,18 @@ def load_dataset(
         elif audio_type == "mel":
             train_dataset = Dataset_.from_file(f"{rel_data_path}/mel.arrow")
             preprocessed_mel = True
-        with open(f"{rel_data_path}/duration.json", "r", encoding="utf-8") as f:
-            data_dict = json.load(f)
+        if frame_duration:
+            with open(f"{rel_data_path}/duration_frame.json", "r", encoding="utf-8") as f:
+                data_dict = json.load(f)
+        else:
+            with open(f"{rel_data_path}/duration.json", "r", encoding="utf-8") as f:
+                data_dict = json.load(f)
         durations = data_dict["duration"]
-        prompt_frames = data_dict.get("prompt_frames", None)
+        
             
         if dataset_name.startswith("multilingual"): # supports all dataset starts with "multilingual"
             print(f"dataset:{dataset_name}")
-            root_dir = "/inspire/hdd/project/multilingualspeechrecognition/chenxie-25019/rixixu/datasets/wavs/"
+            root_dir = "/inspire/hdd/project/embodied-multimodality/chenxie-25019/rixixu/datasets/wavs"
             print(f"[debug]: Root dir: {root_dir}, ensure it matches with the relative path in metadata.")
         else: 
             root_dir = None
@@ -415,13 +424,15 @@ def load_dataset(
                 **mel_spec_kwargs,
             )
         else:
-            if prompt_frames is None:
+            prompt_frames = data_dict.get("prompt_frames", None)
+            if prompt_frames is None and not frame_duration:
                 raise ValueError("prompt_frames is required for SFT mode but got None")
             train_dataset = CustomDataset_sft(
                 train_dataset, 
                 root_dir,
                 durations=durations,
                 prompt_frames=prompt_frames,
+                frame_duration=frame_duration,
                 preprocessed_mel=preprocessed_mel,
                 mel_spec_module=mel_spec_module,
                 **mel_spec_kwargs,
@@ -432,9 +443,15 @@ def load_dataset(
             train_dataset = load_from_disk(f"{dataset_name}/raw")
         except:  # noqa: E722
             train_dataset = Dataset_.from_file(f"{dataset_name}/raw.arrow")
-
-        with open(f"{dataset_name}/duration.json", "r", encoding="utf-8") as f:
-            data_dict = json.load(f)
+        
+        if frame_duration:
+            with open(f"{rel_data_path}/duration_frame.json", "r", encoding="utf-8") as f:
+                data_dict = json.load(f)
+        else:
+            with open(f"{rel_data_path}/duration.json", "r", encoding="utf-8") as f:
+                data_dict = json.load(f)
+        # with open(f"{dataset_name}/duration.json", "r", encoding="utf-8") as f:
+        #     data_dict = json.load(f)
         durations = data_dict["duration"]
         train_dataset = CustomDataset(
             train_dataset, durations=durations, preprocessed_mel=preprocessed_mel, **mel_spec_kwargs

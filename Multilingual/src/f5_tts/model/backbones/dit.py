@@ -152,10 +152,10 @@ class TextEmbedding(nn.Module):
         # concat language embedding
         if self.num_languages is not None and language_ids is not None:
             # 统一 language id 的维度
-            if language_ids.dim() == 2: # [b, nt]，用于cross lingual
+            if language_ids.dim() == 2: # [b, nt]，用于cross lingual或二阶段
                 language_ids = language_ids[:, :max_seq_len]
                 # 这里任意pad一个值就好，因为后面concat之后还是要根据text_mask把后面变为0的
-                language_ids = F.pad(language_ids, (0, max_seq_len - language_ids.shape[1]), value=0) 
+                language_ids = F.pad(language_ids, (0, max_seq_len - language_ids.shape[1]), value=self.num_languages) 
             else:
                 assert language_ids.dim() == 1 # [b]，用于正常的单一语言
                 # [b] -> [b, 1] -> [b, nt]
@@ -167,7 +167,7 @@ class TextEmbedding(nn.Module):
                 # 用于 cfg 或保留文本丢弃语言
                 if drop_lang:
                     current_lang_ids = torch.full_like(current_lang_ids, self.num_languages)
-                
+                # print(f"test: {current_lang_ids}")
                 l_emb = self.lang_embed(current_lang_ids) # [b, nt, lang_dim] 
                 assert text.shape[0] == l_emb.shape[0] and text.shape[1] == l_emb.shape[1], f"Shape mismatch: text vs lang_ids"
                 if self.text_infill_lang_type == "token_concat":
@@ -188,7 +188,7 @@ class TextEmbedding(nn.Module):
                         safe_lang_ids,
                         torch.full_like(safe_lang_ids, self.num_languages),
                     )
-                
+                # print(f"test: {safe_lang_ids}")
                 l_emb = self.lang_embed(safe_lang_ids) # [b, nt, lang_dim] 
                 assert text.shape[0] == l_emb.shape[0] and text.shape[1] == l_emb.shape[1], f"Shape mismatch: text vs lang_ids"
                 if self.text_infill_lang_type == "token_concat":
@@ -444,24 +444,15 @@ class DiT(nn.Module):
             self.text_cache = {}
         
         if not cache or state not in self.text_cache:
-        # if self.text_uncond is None or self.text_cond is None or not cache:
             if audio_mask is None:
                 seq_len = x.shape[1]
             else:
                 seq_len = audio_mask.sum(dim=1)  # per-sample valid speech length
             text_embed = self.text_embed(text, seq_len=seq_len, drop_text=drop_text, drop_lang=drop_lang, language_ids=lang_ids_tensor)
             if cache:
-                # if drop_text:
-                #     self.text_uncond = text_embed
-                # else:
-                #     self.text_cond = text_embed
                 self.text_cache[state] = text_embed
 
         if cache:
-            # if drop_text:
-            #     text_embed = self.text_uncond
-            # else:
-            #     text_embed = self.text_cond
             text_embed = self.text_cache[state]
 
         x = self.input_embed(x, cond, text_embed, drop_audio_cond=drop_audio_cond, audio_mask=audio_mask)
@@ -469,7 +460,6 @@ class DiT(nn.Module):
         return x
 
     def clear_cache(self):
-        # self.text_cond, self.text_uncond = None, None
         self.text_cache = {} # 清空字典
 
     def forward(
@@ -486,6 +476,7 @@ class DiT(nn.Module):
         cfg_infer: bool = False,  # cfg inference, pack cond & uncond forward
         cache: bool = False,
         language_ids: list[str] | torch.Tensor = None, # 在新逻辑里面，应该在外部就把lang_to_id做好，传进来一个tensor
+        time_language_ids: torch.Tensor = None,
         return_ctc: bool = False,
         layered: bool = False,
         prompt_ids: torch.Tensor = None,
@@ -513,15 +504,18 @@ class DiT(nn.Module):
             curr_lang_ids = None
             if lang_ids_tensor is not None and not use_prompt_id:
                 curr_lang_ids = lang_ids_tensor.clone()
-                # if d_lang and self.drop_lang_in_time:
-                #     curr_lang_ids = torch.full_like(curr_lang_ids, self.num_languages)
+                
             elif use_prompt_id and prompt_ids is not None:
                 curr_lang_ids = prompt_ids_tensor.clone()
 
             t_branch = t.clone()
             if self.languages is not None and self.time_infill_lang_type in ["add_only", "time_concat"]:
-                # 如果是 [b, nt]，取最后一个 token 代表目标语种
-                g_lang_ids = curr_lang_ids if curr_lang_ids.dim() == 1 else curr_lang_ids[:, -1]
+                if time_language_ids is not None:
+                    g_lang_ids = time_language_ids
+                # 如果是 [b, nt]，并且没有传入时间维度的language id，则取最后一个 token 代表目标语种
+                else:
+                    g_lang_ids = curr_lang_ids if curr_lang_ids.dim() == 1 else curr_lang_ids[:, -1]
+                # print(f"时间维度上： {g_lang_ids}")
                 l_emb = self.lang_embed(g_lang_ids)
                 if self.time_infill_lang_type == "add_only":
                     # DiT Additive 融合
@@ -529,8 +523,8 @@ class DiT(nn.Module):
                 elif self.time_infill_lang_type == "time_concat":
                     t_branch = self.cond_fusion(torch.cat([t_branch, l_emb], dim=-1))
             
-            if d_lang and self.drop_lang_in_time:
-                    curr_lang_ids = torch.full_like(curr_lang_ids, self.num_languages)
+            # if d_lang and self.drop_lang_in_time:
+            #     curr_lang_ids = torch.full_like(curr_lang_ids, self.num_languages)
 
             x_embed = self.get_input_embed(
                 x, cond, text, 
@@ -558,7 +552,7 @@ class DiT(nn.Module):
             mask = torch.cat((mask, mask), dim=0) if mask is not None else None
         elif cfg_infer and layered:
             x_cond, t_cond = get_branch_inputs(False, False, False) # 都不drop
-            x_text, t_text = get_branch_inputs(True, False, False) # drop 语种
+            x_text, t_text = get_branch_inputs(True, False, False) # drop 音频
             x_uncond, t_uncond = get_branch_inputs(True, True, True) # drop 三个
             x = torch.cat((x_cond, x_text, x_uncond), dim=0)
             t = torch.cat((t_cond, t_text, t_uncond), dim=0)

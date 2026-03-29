@@ -75,11 +75,14 @@ def main():
 
     for uttid, hyp_rel_path in pbar:
         if uttid not in prompt_wavs_map:
-            continue
+            # print(f"{uttid} not in prompt_wavs_map")
+            now_id = uttid.split("_")[1]
+            uttid = "uttid_"+now_id
         
         try:
             # 获取 Prompt 音频绝对路径并提特征
             prompt_full_path = os.path.join(args.dump_dir, prompt_wavs_map[uttid])
+            # print(prompt_full_path)
             prompt_emb = compute_embedding(prompt_full_path)
 
             hyp_full_path = os.path.join(args.decode_dir, hyp_rel_path) 

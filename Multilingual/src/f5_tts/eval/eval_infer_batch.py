@@ -24,7 +24,7 @@ from f5_tts.eval.utils_eval import (
     get_testset_metainfo,
 )
 from f5_tts.infer.utils_infer import load_checkpoint, load_vocoder
-from f5_tts.model import CFM
+from f5_tts.model import CFM, CFM_SFT
 from f5_tts.model.utils import get_tokenizer, get_ipa_id
 from f5_tts.eval.module_clf5 import SpeedPredictor
 
@@ -35,10 +35,10 @@ from f5_tts.train.datasets.ipa_v4_tokenizer import PhonemizeTextTokenizer as Pho
 from f5_tts.train.datasets.ipa_v5_tokenizer import PhonemizeTextTokenizer as PhonemizeTextTokenizer_v5
 from f5_tts.train.datasets.ipa_v6_tokenizer import PhonemizeTextTokenizer as PhonemizeTextTokenizer_v6
 
-import debugpy
-debugpy.listen(('localhost', 5678))
-print("Waiting for debugger attach")
-debugpy.wait_for_client()
+# import debugpy
+# debugpy.listen(('localhost', 5678))
+# print("Waiting for debugger attach")
+# debugpy.wait_for_client()
 
 #accelerator = Accelerator(mixed_precision="fp16")
 accelerator = Accelerator()
@@ -114,7 +114,7 @@ def main():
         "ko":"korean", "ja":"japanese", "ru":"russian",
         "ro":"romanian","hu":"hungarian","cs":"czech","fi":"finnish","hr":"croatian","sk":"slovak","sl":"slovenian","et":"estonian",
         "lt":"lthuanian","bg":"bulgarian","el":"greek","lv":"latvian","mt":"maltese","sv":"swedish","da":"danish",
-        "yue":"cantonese", "ca":"catalan", "cy": "welsh", "mk": "macedonian"
+        "yue":"cantonese", "ca":"catalan"
     }
     lang2in = {value: key for key, value in in2lang.items()}
     if args.languages == "all":
@@ -129,7 +129,6 @@ def main():
                 target_languages.append(lang2in[language])
             else:
                 print(f"Not supported {language}")
-                # target_languages.append(language)
                 continue
     if cross_lingual:
         reference_languages = []
@@ -167,6 +166,9 @@ def main():
     n_fft = model_cfg.model.mel_spec.n_fft
     
     
+    sft = OmegaConf.select(model_cfg, "model.sft", default=False)  
+    
+    
     
     # speedpredictor config
     if sp_type == "pretrained":
@@ -197,28 +199,55 @@ def main():
     vocoder = load_vocoder(vocoder_name=mel_spec_type, is_local=local, local_path=vocoder_local_path)
 
     # Tokenizer
-    vocab_char_map, vocab_size = get_tokenizer(dataset_name, tokenizer)
+    vocab_char_map, vocab_size = get_tokenizer(dataset_name, tokenizer, sft=sft)
     print(f"Dataset: {dataset_name}")
     print(f"Vocab size: {vocab_size}")
-    
-    # Model
-    model = CFM(
-        transformer=model_cls(**model_arc, text_num_embeds=vocab_size, mel_dim=n_mel_channels),
-        tokenizer=tokenizer,
-        mel_spec_kwargs=dict(
-            n_fft=n_fft,
-            hop_length=hop_length,
-            win_length=win_length,
-            n_mel_channels=n_mel_channels,
-            target_sample_rate=target_sample_rate,
-            mel_spec_type=mel_spec_type,
-        ),
-        odeint_kwargs=dict(
-            method=ode_method,
-        ),
-        vocab_char_map=vocab_char_map,
-    ).to(device)
-    # model.transformer.checkpoint_activations = False 
+    if sft:
+        # Model
+        model = CFM_SFT(
+            transformer=model_cls(
+                **model_arc, 
+                sft=sft,
+                text_num_embeds=vocab_size+1,
+                mel_dim=n_mel_channels
+            ),
+            tokenizer=tokenizer,
+            mel_spec_kwargs=dict(
+                n_fft=n_fft,
+                hop_length=hop_length,
+                win_length=win_length,
+                n_mel_channels=n_mel_channels,
+                target_sample_rate=target_sample_rate,
+                mel_spec_type=mel_spec_type,
+            ),
+            odeint_kwargs=dict(
+                method=ode_method,
+            ),
+            vocab_char_map=vocab_char_map,
+        ).to(device)
+    else:
+        model = CFM(
+            transformer=model_cls(
+                **model_arc, 
+                sft=sft,
+                text_num_embeds=vocab_size,
+                mel_dim=n_mel_channels
+            ),
+            tokenizer=tokenizer,
+            mel_spec_kwargs=dict(
+                n_fft=n_fft,
+                hop_length=hop_length,
+                win_length=win_length,
+                n_mel_channels=n_mel_channels,
+                target_sample_rate=target_sample_rate,
+                mel_spec_type=mel_spec_type,
+            ),
+            odeint_kwargs=dict(
+                method=ode_method,
+            ),
+            vocab_char_map=vocab_char_map,
+        ).to(device)
+        # model.transformer.checkpoint_activations = False 
     
         
     ckpt_prefix = rel_path + f"/ckpts/{exp_name}/model_{ckpt_step}"
@@ -254,7 +283,7 @@ def main():
             ipa_id = get_ipa_id(in_language) 
             tokenizer_class = tokenizer_class_map[tokenizer]
             ipa_tokenizer = tokenizer_class(language=ipa_id, with_stress=True)
-            # print("不加重音，否则请取消注释，包括下一行")
+            # print("词表不加重音，否则请取消注释，包括下面")
             if cross_lingual:
                 ref_language= reference_languages[i]
                 ref_ipa_id = get_ipa_id(ref_language)
@@ -278,10 +307,10 @@ def main():
             metalst = data_dir + "/meta.lst"
             metainfo = get_seedtts_testset_metainfo(metalst)
             
-        elif testset in ["cv3_eval", "lemas_eval", "lemas_eval_new", "mixed_eval"]:
+        elif testset in ["cv3_eval", "lemas_eval", "lemas_eval_new", "mixed_eval", "mixed_eval_with_gt"]:
             data_dir = rel_path + f"/data/{testset}/zero_shot/{in_language}"
             print(f"Loading {testset} data from: {data_dir}")
-            metainfo = get_testset_metainfo(data_dir, in_language, ref_language)
+            metainfo = get_testset_metainfo(data_dir, in_language, ref_language, drop_text=drop_text)
             
             # task_lang_path = data_dir.split(f"{testset}/")[-1] # 要改！
             # output_dir = f"results/{task_lang_path}/wavs" # 生成到 results/zero_shot/bg/wavs
@@ -314,7 +343,7 @@ def main():
                     f"{'_no-ref-audio' if no_ref_audio else ''}"
                     "zero_shot"
                 )
-        if testset in ["cv3_eval","lemas_eval", "lemas_eval_new", "mixed_eval"]:
+        if testset in ["cv3_eval","lemas_eval", "lemas_eval_new", "mixed_eval", "mixed_eval_with_gt"]:
             if cross_lingual:
                 output_dir += f"/{ref_language}_{in_language}/wavs"
             else:
@@ -364,7 +393,7 @@ def main():
                 batch_lang_ids = []
                 batch_prompt_lang_ids = []
                 for r_len, g_len in zip(ref_text_lens, gen_text_lens):
-                    if cross_lingual and text_infill_lang_type in ["token_concat", "ada"]:
+                    if cross_lingual and not drop_text and text_infill_lang_type in ["token_concat", "ada"]:
                         if concat_method == 1:
                             ids = [ref_language_idx] * r_len + [in_language_idx] * g_len
                         elif concat_method == 2:
@@ -373,10 +402,9 @@ def main():
                             unk_idx = len(lang_to_id)
                             ids = [unk_idx] * r_len + [in_language_idx] * g_len
                     else:
-                        # print("测试，inferbatch369行")
-                        # unk_idx = len(lang_to_id)
-                        # ids = [unk_idx] * r_len + [unk_idx] * g_len
                         ids = [in_language_idx] * r_len + [in_language_idx] * g_len
+                    if drop_text:
+                        ids = [in_language_idx]
                     batch_lang_ids.append(torch.tensor(ids))
                     if prompt_v:
                         prompt_ids = [ref_language_idx] * (r_len + g_len)
@@ -386,10 +414,7 @@ def main():
                     prompt_lang_ids_tensor = pad_sequence(batch_prompt_lang_ids, batch_first=True, padding_value=ref_language_idx).to(device)
                 else:
                     prompt_lang_ids_tensor = None
-                
-                # if infill_lang_type in ["add_only", "mixed_concat", "concat", "tkncat"]: # 如果使用add_only 或 concat，只能用之前的版本传入目标语言字符串
-                #     lang_ids_tensor = [in_language]
-                
+
                 with torch.inference_mode():
                     generated, _ = model.sample(
                         cond=ref_mels,
@@ -410,7 +435,23 @@ def main():
                         prompt_ids=prompt_lang_ids_tensor,
                     )
                     # Final result
+                    # def strong_asymptotic_saturation(mel, threshold=2.8, limit=3.5, start_bin=60):
+                    #     mel_high = mel[:, :, start_bin:]
+                    #     def apply_limit(x, t, m):
+                    #         # 只有超过threshold的部分才进入tanh
+                    #         margin = m - t
+                    #         return torch.where(
+                    #             x < t,
+                    #             x,
+                    #             t + margin * torch.tanh((x - t) / margin)
+                    #         )
+                    #     mel[:, :, start_bin:] = apply_limit(mel_high, threshold, limit)
+                    #     return mel
+                    
+                    # generated = strong_asymptotic_saturation(generated, threshold=2.5, limit=3.5)
+                    
                     for i, gen in enumerate(generated):
+                        
                         if reverse:
                             gen = gen[: total_mel_lens[i] - ref_mel_lens[i], :].unsqueeze(0)
                         else:

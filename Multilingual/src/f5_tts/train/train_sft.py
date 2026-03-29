@@ -28,6 +28,7 @@ def main(model_cfg):
     cond_drop_prob = model_cfg.model.cond_drop_prob
     sft = model_cfg.model.sft
     use_total_text = model_cfg.model.use_total_text
+    frame_duration = model_cfg.model.frame_duration
 
     exp_name = f"{model_cfg.model.name}_{mel_spec_type}_{model_cfg.model.tokenizer}_{model_cfg.datasets.name}"
     wandb_resume_id = None
@@ -91,7 +92,7 @@ def main(model_cfg):
         use_total_text=use_total_text,
     )
 
-    train_dataset = load_dataset(model_cfg.datasets.name, tokenizer, sft=sft, mel_spec_kwargs=model_cfg.model.mel_spec)
+    train_dataset = load_dataset(model_cfg.datasets.name, tokenizer, sft=sft, mel_spec_kwargs=model_cfg.model.mel_spec,frame_duration=frame_duration)
     trainer.train(
         train_dataset,
         num_workers=model_cfg.datasets.num_workers,
