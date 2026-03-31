@@ -242,7 +242,7 @@ def count_syllables(text: str, lang: str) -> int:
 
 def count_syllables_(text: str, lang: str) -> int:
     def count_punctuations(text):
-        punct_chars = set('\'",.?!;:。，、！？；：')
+        punct_chars = set(',.?!;:。，、！？；：')
         punct_syllables = 0
         for char in text:
             if char in punct_chars:
