@@ -1,5 +1,3 @@
-# 二阶段请在全局conig用cfm_sft.py
-
 """
 ein notation:
 b - batch
@@ -32,6 +30,7 @@ from f5_tts.model.utils import (
     mask_from_prompt_lens,
     prefix_text_padding,
     build_prefixed_language_ids,
+    build_prefixed_language_ids_tokenwise,
 )
 
 
@@ -119,6 +118,7 @@ class CFM_SFT(nn.Module):
         cfg_strength2=0.0, # for layered cfg
         infer_mode=True,
         prompt_ids: torch.Tensor | None = None,
+        codeswitch_time_unknown_lang: bool = False,
     ):
         self.eval()
         # raw wave
@@ -178,14 +178,24 @@ class CFM_SFT(nn.Module):
                 prefix_token_id=prefix_token_id,
                 anchor_token_ids=anchor_token_ids,
             )
-            language_ids = build_prefixed_language_ids(
-                text=base_text,
-                total_lens=duration,
-                prompt_lens=lens,
-                language_ids=language_ids,
-                anchor_token_ids=anchor_token_ids,
-                unknown_lang_id=self.transformer.num_languages,
-            )
+            if language_ids.dim() == 2:
+                language_ids = build_prefixed_language_ids_tokenwise(
+                    text=base_text,
+                    total_lens=duration,
+                    prompt_lens=lens,
+                    language_ids=language_ids,
+                    anchor_token_ids=anchor_token_ids,
+                    unknown_lang_id=self.transformer.num_languages,
+                )
+            else:
+                language_ids = build_prefixed_language_ids(
+                    text=base_text,
+                    total_lens=duration,
+                    prompt_lens=lens,
+                    language_ids=language_ids,
+                    anchor_token_ids=anchor_token_ids,
+                    unknown_lang_id=self.transformer.num_languages,
+                )
 
         duration = torch.maximum(
             torch.maximum((text != -1).sum(dim=-1), lens) + 1, duration
@@ -248,6 +258,7 @@ class CFM_SFT(nn.Module):
                     cache=True,
                     language_ids=language_ids,
                     infer_mode=infer_mode,
+                    codeswitch_time_unknown_lang=codeswitch_time_unknown_lang,
                 )
                 return pred
 
@@ -264,6 +275,7 @@ class CFM_SFT(nn.Module):
                 layered=layered,
                 infer_mode=infer_mode,
                 prompt_ids=prompt_ids,
+                codeswitch_time_unknown_lang=codeswitch_time_unknown_lang,
             )
             
             if layered:

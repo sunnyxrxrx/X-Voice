@@ -469,6 +469,7 @@ class DiT(nn.Module):
         return_ctc: bool = False,
         layered: bool = False,
         prompt_ids: torch.Tensor = None,
+        codeswitch_time_unknown_lang: bool = False,
     ):
         batch, seq_len = x.shape[0], x.shape[1]
         if time.ndim == 0:
@@ -500,8 +501,19 @@ class DiT(nn.Module):
 
             t_branch = t.clone()
             if self.languages is not None and self.time_infill_lang_type in ["add_only", "time_concat"]:
-                # 如果是 [b, nt]，取最后一个 token 代表目标语种
-                g_lang_ids = curr_lang_ids if curr_lang_ids.dim() == 1 else curr_lang_ids[:, -1]
+                if curr_lang_ids.dim() == 1:
+                    g_lang_ids = curr_lang_ids
+                else:
+                    if codeswitch_time_unknown_lang:
+                        g_lang_ids = torch.full(
+                            (curr_lang_ids.shape[0],),
+                            self.num_languages,
+                            device=curr_lang_ids.device,
+                            dtype=torch.long,
+                    )
+                    else:
+                        # 如果是 [b, nt]，默认取最后一个 token 代表目标语种
+                        g_lang_ids = curr_lang_ids[:, -1]
                 l_emb = self.lang_embed(g_lang_ids)
                 if self.time_infill_lang_type == "add_only":
                     # DiT Additive 融合

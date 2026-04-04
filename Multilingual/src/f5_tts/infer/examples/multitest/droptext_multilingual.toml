@@ -1,0 +1,32 @@
+model = "F5TTS_v1_Base_multilingual_full_catada_sft"
+
+model_cfg = "/inspire/hdd/project/embodied-multimodality/chenxie-25019/qingyuliu/Multilingual_F5-TTS/F5-TTS/src/f5_tts/configs/F5TTS_v1_Base_multilingual_full_catada_sft.yaml"
+srp_model_cfg = "/inspire/hdd/project/embodied-multimodality/chenxie-25019/qingyuliu/Multilingual_F5-TTS/SpeakingRatePredictor/src/configs/SpeedPredict_Multilingual.yaml"
+
+ckpt_file = "/inspire/hdd/project/embodied-multimodality/chenxie-25019/qingyuliu/Multilingual_F5-TTS/F5-TTS/ckpts/F5TTS_v1_Base_multilingual_full_catada_sft_v2_vocos_ipa_v6_multilingual_phase2/model_50000.pt"
+srp_ckpt_file = "/inspire/hdd/project/embodied-multimodality/chenxie-25019/rixixu/Multilingual_F5-TTS/SpeakingRatePredictor/ckpts/SpeedPredictor_multilingual_250_100_v2_GCE/model_20000.pt"
+
+ref_audio = "/inspire/hdd/project/embodied-multimodality/chenxie-25019/qingyuliu/Multilingual_F5-TTS/F5-TTS/src/f5_tts/infer/examples/multitest/basic_ref_en.wav"
+ref_text = ""
+
+lang = "zh"
+
+gen_text = "我是一个多语言语音合成工具"
+gen_file = ""
+
+output_dir = "/inspire/hdd/project/embodied-multimodality/chenxie-25019/qingyuliu/Multilingual_F5-TTS/F5-TTS/src/f5_tts/infer/examples/multitest"
+output_file = "output_test.wav"
+
+remove_silence = false
+save_chunk = false
+
+vocoder_name = "vocos"
+load_vocoder_from_local = true
+vocab_file = "/inspire/hdd/project/embodied-multimodality/chenxie-25019/qingyuliu/Multilingual_F5-TTS/F5-TTS/data/multilingual_phase2_ipa_v6_sft/vocab.txt"
+
+target_rms = 0.1
+cross_fade_duration = 0.15
+nfe_step = 32
+cfg_strength = 2.0
+sway_sampling_coef = -1.0
+speed = 1.0

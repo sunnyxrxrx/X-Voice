@@ -587,3 +587,56 @@ def build_prefixed_language_ids(
             padded_language_ids.append(torch.cat((prefix_lang, target_lang_ids), dim=0))
 
     return pad_sequence(padded_language_ids, batch_first=True, padding_value=-1)
+
+
+def build_prefixed_language_ids_tokenwise(
+    text: torch.Tensor,
+    total_lens: torch.Tensor,
+    prompt_lens: torch.Tensor,
+    language_ids: torch.Tensor,
+    anchor_token_ids: torch.Tensor | None = None,
+    unknown_lang_id: int | None = None,
+) -> torch.Tensor:
+    language_ids = language_ids.to(device=text.device, dtype=torch.long)
+    total_lens = total_lens.to(device=text.device, dtype=torch.long)
+    prompt_lens = prompt_lens.to(device=text.device, dtype=torch.long)
+    anchor_len = 0 if anchor_token_ids is None else int(anchor_token_ids.numel())
+    padded_language_ids = []
+
+    for i in range(text.shape[0]):
+        sample_text = text[i]
+        target_text = sample_text[sample_text != -1]
+        target_text_len = int(target_text.numel())
+
+        sample_lang_ids = language_ids[i]
+        sample_lang_ids = sample_lang_ids[sample_lang_ids != -1]
+        if int(sample_lang_ids.numel()) != target_text_len:
+            raise ValueError(
+                f"Token-wise language ids length mismatch: got {int(sample_lang_ids.numel())}, expected {target_text_len}"
+            )
+
+        prompt_len = int(prompt_lens[i].item())
+        total_len = int(total_lens[i].item())
+        target_mel_len = total_len - prompt_len
+
+        if prompt_len <= 0 or target_text_len == 0:
+            padded_language_ids.append(sample_lang_ids)
+            continue
+
+        if target_mel_len <= 0:
+            raise ValueError("total_lens must be greater than prompt_lens")
+
+        num_prefix = round(prompt_len / target_mel_len * target_text_len)
+        if num_prefix <= 0:
+            padded_language_ids.append(sample_lang_ids)
+            continue
+
+        prefix_lang = torch.full((num_prefix,), -1, device=text.device, dtype=torch.long)
+
+        if anchor_len > 0:
+            anchor_lang_ids = torch.full((anchor_len,), unknown_lang_id, device=text.device, dtype=torch.long)
+            padded_language_ids.append(torch.cat((prefix_lang, anchor_lang_ids, sample_lang_ids), dim=0))
+        else:
+            padded_language_ids.append(torch.cat((prefix_lang, sample_lang_ids), dim=0))
+
+    return pad_sequence(padded_language_ids, batch_first=True, padding_value=-1)
