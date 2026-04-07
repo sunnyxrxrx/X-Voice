@@ -15,6 +15,7 @@ def main():
     args = parse_args()
     decode_dir = args.decode_dir
     test_set = args.test_set.split()
+    ref_set = None
     if args.ref_set:
         ref_set = args.ref_set.split()
         summary_file = os.path.join(decode_dir, "summary_results_cross.csv")
@@ -74,7 +75,7 @@ def main():
                     if scores:
                         row["UTMOS"] = f"{sum(scores) / len(scores):.4f}"
 
-        # 4. 解析 DNSMOS
+        # 解析 DNSMOS
         dns_file = os.path.join(lang_path, "dnsmos_mean.txt")
         if os.path.exists(dns_file):
             with open(dns_file, 'r') as f:
