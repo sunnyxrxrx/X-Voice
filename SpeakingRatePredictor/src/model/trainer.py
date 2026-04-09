@@ -532,7 +532,7 @@ class Trainer:
 
         all_metrics.sort(key=lambda x: x["step"])
 
-        best_metrics = min(all_metrics, key=lambda x: x["mean_absolute_error"])
+        best_metrics = min(all_metrics, key=lambda x: x["mean_relative_error"])
 
         summary_file = f"{log_validation_path}/accuracy_summary.jsonl"
         with open(summary_file, "w", encoding="utf-8") as f:
