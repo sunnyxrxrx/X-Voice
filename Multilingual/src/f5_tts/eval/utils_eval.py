@@ -20,6 +20,7 @@ import pickle
 import pyphen
 import unicodedata
 from pythainlp.tokenize import syllable_tokenize
+from finnsyll import FinnSyll
 
 SPEAKING_RATE_ROOT = Path(__file__).resolve().parents[4]
 print(SPEAKING_RATE_ROOT)
@@ -91,7 +92,7 @@ def get_testset_metainfo(data_dir, in_language, ref_language=None, drop_text=Fal
     return metainfo
 
 # seedtts testset metainfo: utt, prompt_text, prompt_wav, gt_text, gt_wav
-def get_seedtts_testset_metainfo(metalst):
+def get_seedtts_testset_metainfo(metalst, drop_text=False):
     f = open(metalst)
     lines = f.readlines()
     f.close()
@@ -104,6 +105,8 @@ def get_seedtts_testset_metainfo(metalst):
             gt_wav = os.path.join(os.path.dirname(metalst), "wavs", utt + ".wav")
         if not os.path.isabs(prompt_wav):
             prompt_wav = os.path.join(os.path.dirname(metalst), prompt_wav)
+        if drop_text:
+            prompt_text = None
         metainfo.append((utt, prompt_text, prompt_wav, gt_text, gt_wav))
     return metainfo
 
@@ -179,7 +182,7 @@ def extract_pyphen_text(text: str) -> str:
     tokens = re.findall(r"[^\W\d_]+(?:['’][^\W\d_]+)*", text, flags=re.UNICODE)
     return " ".join(tokens)
 
-def count_syllables_pure(text: str, lang: str) -> int:
+def count_syllables(text: str, lang: str) -> int:
     if not text:
         return 0
 
@@ -215,7 +218,8 @@ def count_syllables_pure(text: str, lang: str) -> int:
     if not clean_text:
         return 0
 
-    pyphen_lang = PYPHEN_LANG_MAP.get(lang, "en_US")
+    # 获取 Pyphen 对应的字典代码
+    pyphen_lang = PYPHEN_LANG_MAP.get(lang, "en_US") # 默认回退到英语规则
     if pyphen_lang not in _PYPHEN_CACHE:
         try:
             if lang == "fi":
@@ -237,16 +241,16 @@ def count_syllables_pure(text: str, lang: str) -> int:
                 total += len(dic.inserted(word).split("-"))
     return total
 
-PUNCT_CHARS = set(',.?!;:。，、！？；：')
-def count_punctuations(text):
-    punct_syllables = 0
-    for char in text:
-        if char in PUNCT_CHARS:
-            punct_syllables += 1
-    return punct_syllables
+def count_syllables_(text: str, lang: str) -> int:
+    def count_punctuations(text):
+        punct_chars = set(',.?!;:。，、！？；：')
+        punct_syllables = 0
+        for char in text:
+            if char in punct_chars:
+                punct_syllables += 1
+        return punct_syllables
+    return count_syllables(text, lang) + count_punctuations(text)
 
-def count_syllables(text: str, lang: str) -> int:
-    return count_syllables_pure(text, lang) + count_punctuations(text)
 
 def get_inference_prompt(
     metainfo,
@@ -364,7 +368,7 @@ def get_inference_prompt(
             elif len(gen_text_tokenized[-1].encode("utf-8")) == 1 and reverse:
                 gen_text_tokenized.append(" ")
             if random.random()<0.001:
-                print(f"==========\n{ref_text_tokenized}\n{gen_text_tokenized}\n============")
+                print(f"==========\nprompt text tokenized: {ref_text_tokenized}\ntarget text tokenized:{gen_text_tokenized}\n==========")
             
             curr_ref_len = len(ref_text_tokenized) if not drop_text else 0
             curr_gen_len = len(gen_text_tokenized)
@@ -396,7 +400,7 @@ def get_inference_prompt(
             else:
                 if sp_type == "pretrained":
                     assert model_sp is not None
-                    gt_num_unit = count_syllables(gt_text, language)
+                    gt_num_unit = count_syllables_(gt_text, language)
                     ref_mel_t = ref_mel.unsqueeze(0).permute(0, 2, 1)
                     ref_mel_tensor = ref_mel_t.to(device)
                     ref_mel_len_tensor = torch.tensor([ref_mel_len], dtype=torch.long).to(device)
@@ -411,10 +415,10 @@ def get_inference_prompt(
                     
                 elif sp_type == "syllable":
                     if ref_language:
-                        ref_syllables = count_syllables(prompt_text, ref_language)
+                        ref_syllables = count_syllables_(prompt_text, ref_language)
                     else:
-                        ref_syllables = count_syllables(prompt_text, language)
-                    gen_syllables = count_syllables(gt_text, language)
+                        ref_syllables = count_syllables_(prompt_text, language)
+                    gen_syllables = count_syllables_(gt_text, language)
                     if ref_syllables == 0:
                         ref_syllables = 1
                     gen_mel_len = int(ref_mel_len * (gen_syllables / ref_syllables) / speed)

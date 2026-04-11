@@ -278,9 +278,10 @@ class CFM_SFT(nn.Module):
             
             if layered:
                 pred, text_pred, null_pred = torch.chunk(pred_cfg, 3, dim=0)
-                delta_lang = pred - text_pred
+                delta_audio = pred - text_pred
                 delta_content = text_pred - null_pred  # 内容增量：从噪音到“平均发音”
-                res = null_pred + (1.0 + current_cfg2) * delta_content + (1.0 + current_cfg) * delta_lang
+                warmup_gate = torch.clamp(t / 0.01, max=1.0)
+                res = null_pred + (1.0 + current_cfg2 * warmup_gate) * delta_content + (1.0 + current_cfg) * delta_audio
                 # if 0.3 < t < 0.6:
                 #     print(f"content.mean: {delta_content.mean()}, lang.mean: {delta_lang.mean()}") 
             else:
