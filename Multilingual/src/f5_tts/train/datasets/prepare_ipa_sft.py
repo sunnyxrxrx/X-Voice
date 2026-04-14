@@ -63,6 +63,9 @@ def process_batch(batch_data, lang_code, tokenizer_str, sft_gen_dir):
         print(f"IPA conversion failed for batch in {lang_code}: {e}")
         return []
 
+    target_sample_rate = 24000
+    hop_length = 256
+
     results =[]
     for (audio_path, _, duration), ipa_text in zip(batch_data, ipa_texts):
         if not ipa_text.strip():
@@ -85,19 +88,22 @@ def process_batch(batch_data, lang_code, tokenizer_str, sft_gen_dir):
             with open(json_path, "r", encoding="utf-8") as jf:
                 meta = json.load(jf)
                 gen_len = meta["gen_len"]
-                prompt_text = meta["text_ipa"]
         except Exception as e:
             print(f"Error reading JSON {json_path}: {e}")
             continue
 
+        # 计算总帧数: 原音频帧数 + 生成的特征帧数
+        ref_mel_len = int(duration * target_sample_rate / hop_length)
+        total_frames = ref_mel_len + gen_len
+
         results.append({
             "audio_path": audio_path,
             "text": ipa_text,     
-            "total_text": prompt_text + "_ _" + ipa_text,
             "duration": duration,
             "language_id": lang_code,
             "prompt_path": os.path.abspath(pt_path), # 绝对路径
             "prompt_frames": gen_len,
+            "total_frames": total_frames 
         })
     return results, local_fail
 
@@ -155,7 +161,7 @@ def prepare_all(inp_dir, out_dir_root, tokenizer, dataset_name, sft_gen_dir, num
     fail_items = {}
     inp_dir = Path(inp_dir)
     out_dir_root = Path(out_dir_root)
-    out_dir = out_dir_root / f"{dataset_name}_{tokenizer}_sft"
+    out_dir = out_dir_root / f"{dataset_name}_{tokenizer}"
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"Will be saved to {out_dir}")
     
@@ -168,7 +174,7 @@ def prepare_all(inp_dir, out_dir_root, tokenizer, dataset_name, sft_gen_dir, num
     global_token_stats = {}
     total_samples = 0
     duration_list = []
-    prompt_frames_list =[] # 新增：用于存放所有样本的总帧数
+    duration_frame_list =[] # 新增：用于存放所有样本的总帧数
     
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
         for lang_code, csv_path in tasks:
@@ -208,8 +214,8 @@ def prepare_all(inp_dir, out_dir_root, tokenizer, dataset_name, sft_gen_dir, num
                 batch_results, local_fail = future.result()
                 fail_items[lang_code] += local_fail
                 for res in batch_results:
-                    prompt_frames = res.get("prompt_frames")
-                    prompt_frames_list.append(prompt_frames)
+                    total_frames = res.get("total_frames")
+                    duration_frame_list.append(total_frames)
                     
                     writer.write(res)
                     duration_list.append(res['duration'])
@@ -239,8 +245,14 @@ def prepare_all(inp_dir, out_dir_root, tokenizer, dataset_name, sft_gen_dir, num
     with open(out_dir / "duration.json", "w", encoding="utf-8") as f:
         json.dump({
             "duration": duration_list, 
-            "prompt_frames": prompt_frames_list,
             "total_hours": total_duration / 3600,
+            "total_samples": total_samples
+        }, f, ensure_ascii=False)
+        
+    # === 写入 duration_frame.json ===
+    with open(out_dir / "duration_frame.json", "w", encoding="utf-8") as f:
+        json.dump({
+            "duration": duration_frame_list,
             "total_samples": total_samples
         }, f, ensure_ascii=False)
         
@@ -288,4 +300,3 @@ if __name__ == "__main__":
     multiprocessing.set_start_method('spawn', force=True)
     main()
     
-# python src/f5_tts/train/datasets/prepare_ipa_sft.py --tokenizer ipa_v6 --dataset_name multilingual_sft_test --sft_gen_dir ./multilingual_sft_gen
