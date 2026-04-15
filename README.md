@@ -1,11 +1,11 @@
 # X-Voice: One Speaker, 30+ Languages with Zero-Shot Voice Cloning
 
 [![python](https://img.shields.io/badge/Python-3.10-brightgreen)](https://github.com/SWivid/F5-TTS)
-[![arXiv](https://img.shields.io/badge/arXiv-unknown-b31b1b.svg?logo=arXiv)](https://arxiv.org/abs/unknown)
+[![arXiv](https://img.shields.io/badge/arXiv-Coming_soon-b31b1b.svg?logo=arXiv)](https://arxiv.org/abs/unknown)
 [![demo](https://img.shields.io/badge/GitHub-Demo-orange.svg)](unknown)
 [![hfspace](https://img.shields.io/badge/🤗-HF%20Space-yellow)](unknown)
-[![dataset](https://img.shields.io/badge/🤗-Dataset-yellow)](unknown)
-[![dataset](https://img.shields.io/badge/🤗-Benchmark-yellow)](Benchmark)
+[![dataset](https://img.shields.io/badge/🤗-Dataset-yellow)](https://huggingface.co/datasets/XRXRX/X-Voice-Dataset-Train)
+[![dataset](https://img.shields.io/badge/🤗-Benchmark-yellow)](https://huggingface.co/datasets/XRXRX/X-Voice-Testset)
 [![lab](https://img.shields.io/badge/🏫-X--LANCE-grey?labelColor=lightgrey)](https://x-lance.sjtu.edu.cn/)
 [![lab](https://img.shields.io/badge/🏫-SII-grey?labelColor=lightgrey)](https://www.sii.edu.cn/)
 [![lab](https://img.shields.io/badge/🏫-CLSP-grey?labelColor=lightgrey)](https://www.clsp.jhu.edu)
