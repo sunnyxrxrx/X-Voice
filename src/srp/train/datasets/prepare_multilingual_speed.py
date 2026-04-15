@@ -91,7 +91,7 @@ def build_sample(audio_path: str, text: str, duration: float, lang_code: str):
     }
 
 
-def select_split_items(raw_items, lang_code: str, rng: random.Random, inp_dir: Path):
+def select_split_items(raw_items, lang_code: str, rng: random.Random, root_dir: Path):
     shuffled_items = list(raw_items)
     rng.shuffle(shuffled_items)
 
@@ -103,7 +103,7 @@ def select_split_items(raw_items, lang_code: str, rng: random.Random, inp_dir: P
     last_print_duration = 0
     PRINT_INTERVAL_SEC = 10 * 3600  
     for audio_path, text, duration in shuffled_items:
-        audio_dir = inp_dir / "wavs" / audio_path
+        audio_dir = root_dir / audio_path
         if not audio_dir.exists():
             print(f"{audio_dir} not exists")
             continue
@@ -168,8 +168,9 @@ def write_speed_syllables_stats(out_dir: Path, split_name: str, rows, write_hist
         plt.close()
 
 
-def prepare_all(inp_dir: str, out_dir_root: str, dataset_name: str, seed: int = 42):
+def prepare_all(inp_dir: str, root_dir: str, out_dir_root: str, dataset_name: str, seed: int = 42):
     inp_dir = Path(inp_dir)
+    root_dir = Path(root_dir)
     out_dir_root = Path(out_dir_root)
     out_dir = Path(f"{out_dir_root / dataset_name}_srp")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -189,7 +190,7 @@ def prepare_all(inp_dir: str, out_dir_root: str, dataset_name: str, seed: int = 
 
         rng = random.Random(seed + idx)
         lang_train, lang_train_durations, lang_val, lang_val_durations = select_split_items(
-            raw_items, lang_code, rng, inp_dir
+            raw_items, lang_code, rng, root_dir
         )
 
         train_rows.extend(lang_train)
@@ -231,11 +232,17 @@ def main():
         default=str(Path(__file__).resolve().parents[4] / "data"),
         help="Output root dir for SRP data",
     )
+    parser.add_argument(
+        "--root_dir",
+        type=str,
+        default="/inspire/hdd/project/embodied-multimodality/chenxie-25019/rixixu/datasets/wavs",
+        help="Root dir containing audio files referenced by metadata",
+    )
     parser.add_argument("--dataset_name", type=str, default="multilingual_qyl_test")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    prepare_all(args.inp_dir, args.out_dir, args.dataset_name, args.seed)
+    prepare_all(args.inp_dir, args.root_dir, args.out_dir, args.dataset_name, args.seed)
 
 
 if __name__ == "__main__":
