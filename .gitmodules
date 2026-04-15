@@ -1,9 +1,3 @@
-[submodule "src/third_party/MAVL"]
-	path = src/third_party/MAVL
-	url = https://github.com/k1064190/MAVL
 [submodule "F5-TTS"]
 	path = F5-TTS
 	url = https://github.com/SWivid/F5-TTS
-[submodule "src/MAVL"]
-	path = src/MAVL
-	url = https://github.com/k1064190/MAVL

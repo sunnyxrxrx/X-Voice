@@ -20,10 +20,7 @@ from pathlib import Path
 import pyphen
 from pythainlp.tokenize import syllable_tokenize
 
-SPEAKING_RATE_ROOT = Path(__file__).resolve().parents[2]
-MAVL_ROOT = SPEAKING_RATE_ROOT / "MAVL"
-
-from MAVL.process_syllable.japanese import split_syllables as ja_split_syllables
+from srp.model.jp_syllable import split_syllables as ja_split_syllables
 from finnsyll import FinnSyll
 
 def seed_everything(seed=0):
