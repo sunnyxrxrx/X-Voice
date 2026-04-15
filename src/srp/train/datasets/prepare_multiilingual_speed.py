@@ -14,8 +14,6 @@ import matplotlib.pyplot as plt
 
 from srp.model.utils import count_syllables, extract_pyphen_text
 
-
-
 TRAIN_HOURS_PER_LANG = 250
 VAL_SAMPLES_PER_LANG = 100
 VALID_PUNCTUATION = '\'",.?!;:。，、！？；：「」『』【】-'
@@ -34,9 +32,6 @@ def check_valid_chars(input_str: str, lang) -> bool:
             continue
         return False
     return True
-
-
-
 
 def map_to_class(speed: float, delta: float = 0.25) -> float:
     return round(speed / delta) * delta

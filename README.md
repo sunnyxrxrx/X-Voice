@@ -82,17 +82,8 @@ conda install ffmpeg
 ```bash
 git clone https://github.com/QingyuLiu0521/X-Voice.git
 cd X-Voice
+git submodule update --init src/MAVL
 pip install -e .
-```
-
-### Optional dependencies
-
-```bash
-# Evaluation related dependencies
-pip install -e ".[eval]"
-
-# IPA v4 related dependencies
-pip install -e ".[ipa_v4]"
 ```
 
 ## Inference
