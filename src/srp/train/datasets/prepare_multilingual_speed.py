@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from srp.model.utils import count_syllables, extract_pyphen_text
 
 TRAIN_HOURS_PER_LANG = 250
-VAL_SAMPLES_PER_LANG = 100
+VAL_SAMPLES_PER_LANG = 3 # 100
 VALID_PUNCTUATION = '\'",.?!;:。，、！？；：「」『』【】-'
 
 def check_valid_chars(input_str: str, lang) -> bool:
@@ -38,8 +38,8 @@ def map_to_class(speed: float, delta: float = 0.25) -> float:
 
 
 def read_all_metadata(input_dir: str):
-    input_path = Path(input_dir) / "csvs"
-    csv_files = list(input_path.glob("metadata_*_top_1000.0h.csv"))
+    input_path = Path(input_dir) / "csv_stage2_debug"
+    csv_files = list(input_path.glob("metadata_*_test.csv"))
 
     if not csv_files:
         print(f"No proper csv files found in {input_dir}")
@@ -240,4 +240,4 @@ def main():
 if __name__ == "__main__":
     main()
 
-# python src/train/datasets/prepare_multilingual_speed.py --dataset_name multilingual_250_100_v2
+# python src/srp/train/datasets/prepare_multilingual_speed.py --dataset_name multilingual_qyl_test
