@@ -107,7 +107,7 @@ def select_split_items(raw_items, lang_code: str, rng: random.Random, root_dir: 
         if not audio_dir.exists():
             print(f"{audio_dir} not exists")
             continue
-        sample = build_sample(audio_path, text, duration, lang_code)
+        sample = build_sample(str(audio_dir.resolve()), text, duration, lang_code)
         
         if sample is None:
             continue
