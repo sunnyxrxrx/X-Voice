@@ -5,6 +5,7 @@ import random
 import re
 import unicodedata
 from pathlib import Path
+import sys
 
 import matplotlib
 
@@ -221,7 +222,7 @@ def main():
     parser.add_argument(
         "--inp_dir",
         type=str,
-        default="/inspire/hdd/project/embodied-multimodality/chenxie-25019/rixixu/datasets",
+        default="/inspire/hdd/project/embodied-multimodality/chenxie-25019/qingyuliu/datasets",
         help="Root dir containing csv_train/metadata_*_full.csv",
     )
     parser.add_argument(
@@ -230,7 +231,7 @@ def main():
         default=str(Path(__file__).resolve().parents[4] / "data"),
         help="Output root dir for SRP data",
     )
-    parser.add_argument("--dataset_name", type=str, default="multilingual_250_100")
+    parser.add_argument("--dataset_name", type=str, default="multilingual_qyl_test")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
