@@ -59,8 +59,6 @@ def main(model_cfg):
     pretrained_path = model_cfg.ckpts.get("pretrained_path", None)
     if pretrained_path is None:
         raise ValueError("pretrained_path is required in SFT mode.")
-    freeze_update = model_cfg.ckpts.get("freeze_update", None)
-    continue_training = model_cfg.ckpts.get("continue_training", None)
     # init trainer
     trainer = Trainer_SFT(
         model,
@@ -87,8 +85,6 @@ def main(model_cfg):
         local_vocoder_path=model_cfg.model.vocoder.local_path,
         model_cfg_dict=OmegaConf.to_container(model_cfg, resolve=True),
         pretrained_path=pretrained_path,
-        freeze_update=freeze_update,
-        continue_training=continue_training,
         use_total_text=use_total_text,
     )
 

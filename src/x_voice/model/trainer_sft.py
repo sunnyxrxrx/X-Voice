@@ -56,8 +56,6 @@ class Trainer_SFT:
         local_vocoder_path: str = "",  # local vocoder path
         model_cfg_dict: dict = dict(),  # training config
         pretrained_path: str = None,
-        freeze_update: int | None = None,
-        continue_training: bool | None = None,
         use_total_text: bool = False,
     ):
         ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
@@ -144,9 +142,6 @@ class Trainer_SFT:
         
         self.pretrained_path = pretrained_path
         self.use_total_text = use_total_text
-        self.freeze = False
-        self.freeze_update = freeze_update
-        self.continue_training = continue_training
 
     @property
     def is_main(self):
@@ -214,6 +209,7 @@ class Trainer_SFT:
 
     def load_checkpoint(self):
         use_fallback_pretrained = False
+        self.accelerator.wait_for_everyone()
         if (
             not exists(self.checkpoint_path)
             or not os.path.exists(self.checkpoint_path)
@@ -224,28 +220,25 @@ class Trainer_SFT:
                 use_fallback_pretrained = True
             else:
                 return 0
+        elif "model_last.pt" in os.listdir(self.checkpoint_path):
+            latest_checkpoint = "model_last.pt"
         else:
-            self.accelerator.wait_for_everyone()
-            if "model_last.pt" in os.listdir(self.checkpoint_path):
-                latest_checkpoint = "model_last.pt"
-            else:
-                # Updated to consider pretrained models for loading but prioritize training checkpoints
-                all_checkpoints = [
-                    f
-                    for f in os.listdir(self.checkpoint_path)
-                    if (f.startswith("model_") or f.startswith("pretrained_")) and f.endswith((".pt", ".safetensors"))
-                ]
+            # Updated to consider pretrained models for loading but prioritize training checkpoints
+            all_checkpoints = [
+                f
+                for f in os.listdir(self.checkpoint_path)
+                if (f.startswith("model_") or f.startswith("pretrained_")) and f.endswith((".pt", ".safetensors"))
+            ]
 
-                # First try to find regular training checkpoints
-                training_checkpoints = [f for f in all_checkpoints if f.startswith("model_") and f != "model_last.pt"]
-                if training_checkpoints:
-                    latest_checkpoint = sorted(
-                        training_checkpoints,
-                        key=lambda x: int("".join(filter(str.isdigit, x))),
-                    )[-1]
-                else:
-                    # If no training checkpoints, use pretrained model in checkpoint_path
-                    latest_checkpoint = next(f for f in all_checkpoints if f.startswith("pretrained_"))
+            # First try to find regular training checkpoints
+            training_checkpoints = [f for f in all_checkpoints if f.startswith("model_") and f != "model_last.pt"]
+            if training_checkpoints:
+                latest_checkpoint = sorted(
+                    training_checkpoints,
+                    key=lambda x: int("".join(filter(str.isdigit, x))),
+                )[-1]
+            else:
+                latest_checkpoint = next(f for f in all_checkpoints if f.startswith("pretrained_"))
 
         checkpoint_path = latest_checkpoint if use_fallback_pretrained else f"{self.checkpoint_path}/{latest_checkpoint}"
 
@@ -259,8 +252,7 @@ class Trainer_SFT:
             checkpoint = torch.load(
                 checkpoint_path, weights_only=True, map_location="cpu"
             )
-        if self.is_main:
-            print(f"Loading checkpoint from: {checkpoint_path}")
+
         # patch for backward compatibility, 305e3ea
         for key in ["ema_model.mel_spec.mel_stft.mel_scale.fb", "ema_model.mel_spec.mel_stft.spectrogram.window"]:
             if key in checkpoint["ema_model_state_dict"]:
@@ -316,7 +308,6 @@ class Trainer_SFT:
             target_sample_rate = self.accelerator.unwrap_model(self.model).mel_spec.target_sample_rate
             log_samples_path = f"{self.checkpoint_path}/samples"
             os.makedirs(log_samples_path, exist_ok=True)
-            # print(f"Choose to sample audios. audio samples will be saved to {log_samples_path}")
 
         if exists(resumable_with_seed):
             generator = torch.Generator()
@@ -374,15 +365,6 @@ class Trainer_SFT:
         )  # actual multi_gpu updates = single_gpu updates / gpu nums
         start_update = self.load_checkpoint()
         global_update = start_update
-        
-        if self.freeze and self.freeze_update is not None and global_update < self.freeze_update:
-            if self.is_main:
-                print(f"Updates {global_update} < {self.freeze_update}: Freezing DiT blocks...")
-            model_inner = self.accelerator.unwrap_model(self.model)
-            for name, param in model_inner.named_parameters():
-                # 冻结 Transformer 主干，只留 text_embed 和新加的层进行热身训练
-                if "transformer_blocks" in name:
-                    param.requires_grad = False
 
         if exists(resumable_with_seed):
             orig_epoch_step = len(train_dataloader)
@@ -415,17 +397,6 @@ class Trainer_SFT:
             )
 
             for batch in current_dataloader:
-                if self.freeze_update is not None and global_update == self.freeze_update:
-                    self.accelerator.wait_for_everyone()
-                    if self.is_main:
-                        print(f"\nUnfreezing DiT backbone for full training.")
-                    model_inner = self.accelerator.unwrap_model(self.model)
-                    for name, param in model_inner.named_parameters():
-                        if "transformer_blocks" in name:
-                            param.requires_grad = True
-                            if self.is_main:
-                                print(f"set requires_grad of {name} to True")
-                    self.freeze = False
                 with self.accelerator.accumulate(self.model):
                     text_inputs = batch["total_text"] if self.use_total_text else batch["text"]
                     mel_spec = batch["mel"].permute(0, 2, 1)
@@ -473,7 +444,6 @@ class Trainer_SFT:
                 if global_update % self.save_per_updates == 0 and self.accelerator.sync_gradients:
                     self.save_checkpoint(global_update)
                     if self.log_samples and self.accelerator.is_local_main_process:
-                        print("Generating audios...")
                         ref_audio_len = mel_lengths[0]
                         if self.use_total_text:
                             infer_text = [
