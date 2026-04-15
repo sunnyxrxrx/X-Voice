@@ -211,7 +211,6 @@ def load_dataset(
     if dataset_name.startswith("multilingual"): # supports all dataset starts with "multilingual"
         print(f"dataset:{dataset_name}")
         root_dir = "/inspire/hdd/project/embodied-multimodality/chenxie-25019/rixixu/datasets/wavs"
-        print(f"[debug]: Root dir: {root_dir}, ensure it matches with the relative path in metadata.")
     if dataset_type == "CustomDataset":
         rel_data_path = str(DATA_DIR / f"{dataset_name}_srp")
         if audio_type == "raw":

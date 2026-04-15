@@ -29,7 +29,6 @@ def main(cfg):
         silence_ratio_min=cfg.model.get("silence_ratio_min", 0.2),
         silence_ratio_max=cfg.model.get("silence_ratio_max", 0.8),
     )
-    print(f"Parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
     # init trainer
     trainer = Trainer(
         model,
