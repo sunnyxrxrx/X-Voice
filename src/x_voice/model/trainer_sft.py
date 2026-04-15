@@ -213,7 +213,7 @@ class Trainer_SFT:
         if (
             not exists(self.checkpoint_path)
             or not os.path.exists(self.checkpoint_path)
-            or not any(filename.endswith((".pt", ".safetensors")) for filename in os.listdir(self.checkpoint_path))
+            or not any(filename.endswith((".safetensors")) for filename in os.listdir(self.checkpoint_path))
         ):
             if self.pretrained_path and os.path.exists(self.pretrained_path):
                 latest_checkpoint = self.pretrained_path
