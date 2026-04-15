@@ -9,10 +9,7 @@ from omegaconf import OmegaConf
 from srp.model import SpeedPredictor, Trainer
 from srp.model.dataset import load_dataset
 
-
-PROJECT_DIR = files("srp").joinpath("../..")
-
-os.chdir(str(PROJECT_DIR))
+os.chdir(str(files("srp").joinpath("../..")))
 
 @hydra.main(version_base="1.3", config_path=str(files("srp").joinpath("configs")), config_name=None)
 def main(cfg):
@@ -37,7 +34,7 @@ def main(cfg):
         num_warmup_updates=cfg.optim.num_warmup_updates,
         save_per_updates=cfg.ckpts.save_per_updates,
         keep_last_n_checkpoints=cfg.ckpts.keep_last_n_checkpoints,
-        checkpoint_path=str(PROJECT_DIR.joinpath(cfg.ckpts.save_dir)),
+        checkpoint_path=str(files("srp").joinpath(f"../../{cfg.ckpts.save_dir}")),
         batch_size_per_gpu=cfg.datasets.batch_size_per_gpu,
         batch_size_type=cfg.datasets.batch_size_type,
         max_samples=cfg.datasets.max_samples,

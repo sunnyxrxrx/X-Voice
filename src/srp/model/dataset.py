@@ -21,8 +21,6 @@ from pathlib import Path
 import unicodedata
 from pythainlp.tokenize import syllable_tokenize
 
-DATA_DIR = (Path(__file__) / "../../../data").resolve()
-
 from .modules import MelSpec
 from .utils import default, extract_pyphen_text, count_syllables
 
@@ -105,7 +103,6 @@ class CustomDataset(Dataset):
         mel_spec_module: nn.Module | None = None,
         speed_type="syllables",
         split="train",
-        root_dir=None,
     ):
         self.data = custom_dataset
         self.durations = durations
@@ -123,7 +120,6 @@ class CustomDataset(Dataset):
             "words": 32
         }
         self.max_label = num_classes_map[self.speed_type]
-        self.root_dir = root_dir
 
         if not preprocessed_mel:
             self.mel_spectrogram = default(
@@ -156,8 +152,6 @@ class CustomDataset(Dataset):
             duration = row["duration"]
             speed = max(row[f"speed_{self.speed_type}"], 0.25)
             speed_class = min(int(speed/0.25 - 1), self.max_label - 1)
-            if self.root_dir and not os.path.isabs(audio_path):
-                audio_path = os.path.join(self.root_dir, audio_path)
             # filter by given length
             if 0.3 <= duration <= 30:
                 break  # valid
@@ -208,11 +202,8 @@ def load_dataset(
     print(f"Loading {split} dataset ...")
     
     suffix = "_val" if split == "val" else ""
-    if dataset_name.startswith("multilingual"): # supports all dataset starts with "multilingual"
-        print(f"dataset:{dataset_name}")
-        root_dir = "/inspire/hdd/project/embodied-multimodality/chenxie-25019/rixixu/datasets/wavs"
     if dataset_type == "CustomDataset":
-        rel_data_path = str(DATA_DIR / f"{dataset_name}_srp")
+        rel_data_path = str(files("srp").joinpath(f"../../data/{dataset_name}_srp"))
         if audio_type == "raw":
             try:
                 train_dataset = load_from_disk(f"{rel_data_path}/raw{suffix}")
@@ -232,7 +223,6 @@ def load_dataset(
             mel_spec_module=mel_spec_module,
             speed_type=speed_type,
             split=split,
-            root_dir=root_dir,
             **mel_spec_kwargs,
         )
 
@@ -256,7 +246,7 @@ def load_dataset(
         )
         pre, post = dataset_name.split("_")
         train_dataset = HFDataset(
-            load_dataset(f"{pre}/{pre}", split=f"train.{post}", cache_dir=str(DATA_DIR)),
+            load_dataset(f"{pre}/{pre}", split=f"train.{post}", cache_dir=str(files("srp").joinpath("../../data"))),
         )
     return train_dataset
 
