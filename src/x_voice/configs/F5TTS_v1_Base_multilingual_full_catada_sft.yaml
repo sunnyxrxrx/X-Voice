@@ -72,5 +72,8 @@ ckpts:
   save_dir: ckpts/${model.name}_${model.mel_spec.mel_spec_type}_${model.tokenizer}_${datasets.name}
   pretrained_path: ckpts/F5TTS_v1_Base_multilingual_full_catada_stress_nomask/model_500000.pt
 
+attn:
+  attn_backend: flash_attn # flash_attn | torch
+  attn_mask_enabled: True # True | False
 
 # accelerate launch src/x_voice/train/train_sft.py  --config-name F5TTS_v1_Base_multilingual_full_catada_sft_v2.yaml
