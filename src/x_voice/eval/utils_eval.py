@@ -152,7 +152,7 @@ PYPHEN_LANG_MAP = {
     "it": "it_IT",
     "lt": "lt_LT",
     "lv": "lv_LV",
-    "mt": "it_IT",  # pyphen没有mt的语言包，使用意大利语代替
+    "mt": "it_IT",  # pyphen has no Maltese package, so Italian is used as a fallback.
     "nl": "nl_NL",
     "pl": "pl_PL",
     "pt": "pt_PT",
@@ -363,7 +363,7 @@ def get_inference_prompt(
                 text_list = [gen_text_tokenized]
                 # print(text_list)
             elif reverse:
-                text_list = [gen_text_tokenized + ref_text_tokenized] # 两个列表相加
+                text_list = [gen_text_tokenized + ref_text_tokenized] # Concatenate the two token lists.
                 # print(text_list)
             else:
                 text_list = [ref_text_tokenized + gen_text_tokenized]

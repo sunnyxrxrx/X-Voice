@@ -5,7 +5,7 @@ import json
 import os
 import sys
 import multiprocessing as mp
-# 新增：导入spawn上下文（核心修复）
+# Import the spawn context to keep CUDA multiprocessing compatible.
 from multiprocessing import get_context
 from importlib.resources import files
 
@@ -57,14 +57,14 @@ def main():
     metrics = []
 
     if eval_task == "wer":
-        # 核心修复：替换为 spawn 模式进程池（兼容CUDA）
+        # Use a spawn-based process pool for CUDA compatibility.
         with get_context('spawn').Pool(processes=len(gpus)) as pool:
             args = [(rank, lang, sub_test_set, asr_ckpt_dir) for (rank, sub_test_set) in test_set]
             results = pool.map(run_asr_wer, args)
             for r in results:
                 full_results.extend(r)
     elif eval_task == "sim":
-        # 核心修复：替换为 spawn 模式进程池（兼容CUDA）
+        # Use a spawn-based process pool for CUDA compatibility.
         with get_context('spawn').Pool(processes=len(gpus)) as pool:
             args = [(rank, sub_test_set, wavlm_ckpt_dir) for (rank, sub_test_set) in test_set]
             results = pool.map(run_sim, args)

@@ -46,7 +46,7 @@ def default(v, d):
 
 def lens_to_mask(t: int["b"], length: int | None = None) -> bool["b n"]:  # noqa: F722 F821
     if not exists(length):
-        length = t.amax() # 返回张量t中最大的值
+        length = t.amax() # Return the largest sequence length in the batch.
 
     seq = torch.arange(length, device=t.device)
     return seq[None, :] < t[:, None]

@@ -54,7 +54,7 @@ def process_batch(batch_data, lang_code, tokenizer_str):
     if tokenizer is None:
         return []
 
-    # 分别提取参考文本和生成文本
+    # Extract reference and generated texts separately.
     ref_texts = [item[1] for item in batch_data]
     gen_texts = [item[2] for item in batch_data]
     
@@ -74,12 +74,12 @@ def process_batch(batch_data, lang_code, tokenizer_str):
 
         ref_text_len = len(ref_text.encode("utf-8"))
         gen_text_len = len(gen_text.encode("utf-8"))
-        # 防止除零错误
+        # Avoid division-by-zero issues.
         if ref_text_len == 0: continue
-        # 计算 total_mel_len
+        # Estimate the combined mel length.
         ref_mel_len = int(duration * target_sample_rate / hop_length)
         total_mel_len = ref_mel_len + int(ref_mel_len / ref_text_len * gen_text_len)
-        # 提取不带后缀的相对路径
+        # Keep the relative path without its suffix.
         rel_path = audio_path
         results.append({
             "ref_text": ref_text,
@@ -95,10 +95,10 @@ def process_batch(batch_data, lang_code, tokenizer_str):
 
 def read_all_metadata(input_dir):
     """
-    扫描目录下所有的 metadata_*.csv 文件
+    Scan all metadata_*.csv files under the input directory.
     """
     input_path = Path(input_dir)/'csv_stage2_debug'
-    # 匹配 metadata_zh.csv, metadata_en.csv 等
+    # Match files such as metadata_zh.csv and metadata_en.csv.
     all_files = list(input_path.glob("metadata_*_test.csv"))
     csv_files = []
     for f in all_files:
@@ -112,7 +112,7 @@ def read_all_metadata(input_dir):
     all_tasks = [] # (lang_code, file_path)
     
     for csv_file in csv_files:
-        # 解析文件名获取语言代码，如 metadata_zh.csv -> zh
+        # Extract the language code from the file name, e.g. metadata_zh.csv -> zh.
         lang_code = csv_file.stem.split('_')[1]
         if True:
             print(f"lang_code:{lang_code}")
@@ -124,28 +124,28 @@ def read_all_metadata(input_dir):
 def read_csv_file(csv_path, target_duration=None):
     items = []
     all_duration = 0
-    # 第一步：先读取所有有效行（带duration的），存储到临时列表
+    # Step 1: collect all valid rows with durations into a temporary list.
     temp_valid_lines = []
     
     with open(csv_path, 'r', encoding='utf-8') as f:
-        header = f.readline().strip()  # 跳过表头
+        header = f.readline().strip()  # Skip the header row.
         for line in f:
             parts = line.strip().split('|')
-            if len(parts) in [3, 4]:  # path|duration|text 有效行，可选DNSMOS行
-                # 先暂存原始数据（路径、文本、时长）
+            if len(parts) in [3, 4]:  # Valid path|duration|text row, with optional DNSMOS field.
+                # Store the raw path, text, and duration first.
                 temp_valid_lines.append((parts[0], parts[2], float(parts[1])))
-            elif len(parts) == 2:  # 无duration的行
+            elif len(parts) == 2:  # Row without a duration value.
                 print("Warning: no duration. Check the metadata file")
 
                 
     
-    # 第二步：如果指定了目标时长，先打乱有效行；否则直接使用原顺序
+    # Step 2: shuffle valid rows only when a target duration is provided.
     if target_duration is not None:
-        random.shuffle(temp_valid_lines)  # 随机打乱有效行
+        random.shuffle(temp_valid_lines)  # Shuffle valid rows.
     
-    # 第三步：遍历（打乱后的）有效行，累加时长直到达到目标
+    # Step 3: accumulate duration until the target is reached.
     for path, text, duration in temp_valid_lines:
-        # 如果指定了目标时长且已超过，停止遍历
+        # Stop once the requested duration budget has been exceeded.
         if target_duration is not None and all_duration > target_duration * 3600:
             break
         items.append((path, text, duration))
@@ -182,13 +182,13 @@ def prepare_all(inp_dir, out_dir_root, tokenizer, dataset_name, num_workers=16, 
             raw_items, return_duration = read_csv_file(csv_path, lang_duration)
             if not raw_items: continue
             
-            # 1. 建立排序后的文本池 (格式: (文本, 字节数))
-            # 排序是为了后续使用二分查找定位区间
+            # 1. Build a sorted text pool as (text, byte_length) pairs.
+            # Sorting lets us use binary search for the target range.
             text_pool = sorted(
                 [(t, len(t.encode("utf-8"))) for _, t, _ in raw_items],
                 key=lambda x: x[1]
             )
-            pool_lengths = [x[1] for x in text_pool]  # 提取纯长度列表用于二分
+            pool_lengths = [x[1] for x in text_pool]  # Extract the length list for binary search.
             
             fixed_items = []
             chunck_items = 0
@@ -196,26 +196,26 @@ def prepare_all(inp_dir, out_dir_root, tokenizer, dataset_name, num_workers=16, 
                 ref_len = len(t.encode("utf-8"))
                 if ref_len == 0: continue
                 
-                # 目标区间：[min_b, max_b]
+                # Target interval: [min_b, max_b]
                 min_b, max_b = ref_len * 0.1, ref_len * 0.4
                 
-                # 2. 使用二分查找快速定位符合条件的索引区间
+                # 2. Locate the valid index range with binary search.
                 start_idx = bisect.bisect_left(pool_lengths, min_b)
                 end_idx = bisect.bisect_right(pool_lengths, max_b)
                 
                 gen_t = None
                 if start_idx < end_idx:
-                    # 如果区间存在，随机选一个，保证数据多样性
+                    # If the interval exists, sample one item randomly for diversity.
                     gen_t = text_pool[random.randint(start_idx, end_idx - 1)][0]
                 else:
-                    # 3. 兜底逻辑：如果池子里确实没有这么短的句子，查找最接近 max_b 的句子进行截断
-                    # 找到第一个长度大于 max_b 的句子
+                    # 3. Fallback: truncate the nearest longer sentence if no short one exists.
+                    # Find the first sentence longer than max_b.
                     chunck_items += 1
                     trunc_idx = bisect.bisect_left(pool_lengths, max_b)
                     if trunc_idx < len(text_pool):
                         rand_idx = random.randint(trunc_idx, len(text_pool) - 1)
                         long_cand = text_pool[rand_idx][0]
-                        # 执行智能截断 (欧美按词，中日泰按字)
+                        # Truncate by words for alphabetic languages and by characters for CJK-like text.
                         words = long_cand.split()
                         if lang_code not in ["zh", "ja", "ko"]:
                             tmp_words, curr_b = [], 0
@@ -232,13 +232,13 @@ def prepare_all(inp_dir, out_dir_root, tokenizer, dataset_name, num_workers=16, 
                                 tmp_chars += char; curr_b += c_b
                             gen_t = tmp_chars
                 
-                # 只有成功获得 gen_text 且长度合理才加入
-                if gen_t and len(gen_t.encode("utf-8")) >= 1: # 至少1个字节
+                # Keep samples only when a non-empty generated text is available.
+                if gen_t and len(gen_t.encode("utf-8")) >= 1: # At least one byte.
                     fixed_items.append((p, t, gen_t, d))
           
             print(f"Loaded {len(fixed_items)} lines. Duration: {return_duration}. Starting G2P conversion.")
             
-            batch_size = 1000 # 每个进程处理 1000 条
+            batch_size = 1000 # Each worker processes 1000 rows at a time.
             batches = [fixed_items[i:i + batch_size] for i in range(0, len(fixed_items), batch_size)]
             
             futures = [executor.submit(process_batch, batch, lang_code, tokenizer) for batch in batches]

@@ -38,19 +38,19 @@ class TextNormalizer:
                 return None
 
     def clean_text_for_tts(self, text):
-        text = re.sub(r'\s+', ' ', text).strip() # 合并空格
+        text = re.sub(r'\s+', ' ', text).strip() # Collapse repeated whitespace.
         text = text.lower()
-        # 特殊字符替换
+        # Normalize punctuation and special symbols.
         text = text.replace('!!', '!').replace('¡¡', '¡')
         text = text.replace('!,', '!').replace('!.', '!')
         text = text.replace('?,', '?').replace('?.', '?')
         text = text.replace('-', ' ')
         quote_pattern = r'[„“»«”]' 
         text= re.sub(quote_pattern, '"', text)
-        text = text.replace('#', '').replace('*',' ') # 德语可能会有*在两个单词中间，换为空格
-        text = re.sub(r'\s+([.,!?;:])', r'\1', text) # 标点符号前的空格
-        text = re.sub(r'([¡¿])\s+', r'\1', text) # 倒标点必须紧跟文本
-        # text = re.sub(r'([a-z]+)([A-Z])', r'\1 \2', text) # 驼峰式命名的拆分
+        text = text.replace('#', '').replace('*',' ') # German text may use * between words; convert it to a space.
+        text = re.sub(r'\s+([.,!?;:])', r'\1', text) # Remove spaces before punctuation.
+        text = re.sub(r'([¡¿])\s+', r'\1', text) # Keep inverted punctuation attached to the text.
+        # text = re.sub(r'([a-z]+)([A-Z])', r'\1 \2', text) # Split camelCase words.
         if text:
             text = text[0].upper() + text[1:]
         return text
@@ -112,8 +112,8 @@ if __name__ == "__main__":
     ]
 
     for idx, test_text in enumerate(test_cases, 1):
-        print(f"原始文本：{test_text}")
+        print(f"Original text: {test_text}")
         normalized_text = normalizer.normalize(test_text,post=True) #, to="cardinal")
-        print(f"归一化后：{normalized_text}\n")
+        print(f"Normalized text: {normalized_text}\n")
         
 # python src/x_voice/eval/text_normalizer.py

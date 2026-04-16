@@ -33,10 +33,10 @@ def main():
 
     def load_and_preprocess(wav_path, target_sr=16000):
         wav, sr = torchaudio.load(wav_path)
-        # 转单声道
+        # Convert multi-channel audio to mono.
         if wav.shape[0] > 1:
             wav = wav[0, :].unsqueeze(0)
-        # 重采样
+        # Resample to the target sample rate.
         if sr != target_sr:
             resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=target_sr)
             wav = resampler(wav)
@@ -48,7 +48,7 @@ def main():
         emb = model(wav)
         return emb # [1, embedding_size]
 
-    # 解析文件列表
+    # Parse the SCP-style file lists.
     def load_scp(path):
         data = {}
         if path and os.path.exists(path):
@@ -80,7 +80,7 @@ def main():
             uttid = "uttid_"+now_id
         
         try:
-            # 获取 Prompt 音频绝对路径并提特征
+            # Resolve the prompt audio path and extract its embedding.
             prompt_full_path = os.path.join(args.dump_dir, prompt_wavs_map[uttid])
             # print(prompt_full_path)
             prompt_emb = compute_embedding(prompt_full_path)

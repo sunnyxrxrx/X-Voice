@@ -132,7 +132,7 @@ class SpeedTransformer(nn.Module):
             
         # sequence pooling
         weights = self.pool(x)                      # shape = [b, seq_len, 1]
-        # 将 padding 位置的 weights 设为 -inf
+        # Force padding positions to negative infinity before softmax.
         weights.masked_fill_(~mask.unsqueeze(-1), -torch.finfo(weights.dtype).max)
         weights = F.softmax(weights, dim=1)         # shape = [b, seq_len, 1]
         x = (x * weights).sum(dim=1)                # shape = [b, h]

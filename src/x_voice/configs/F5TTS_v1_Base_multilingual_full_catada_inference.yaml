@@ -4,7 +4,7 @@ datasets:
   batch_size_type: frame  # frame | sample
   max_samples: 64  # max sequences per batch if use frame-wise batch_size. we set 32 for small models, 64 for base models
   num_workers: 16
-  root_dir: /inspire/hdd/project/embodied-multimodality/chenxie-25019/rixixu/datasets/wavs/ # 源音频根路径
+  root_dir: /inspire/hdd/project/embodied-multimodality/chenxie-25019/rixixu/datasets/wavs/ # Root directory for source audio.
 
 source:
   expname: F5TTS_v1_Base_multilingual_full_catada_stress_nomask
@@ -14,5 +14,5 @@ infer:
   nfe_step: 32
   cfg_strength: 2.0
   sway_sampling_coef: -1.0
-  gen_root: null # 生成结果保存路径，null表示不保存
-  save_wav: False # 是否保存生成的wav文件，True表示保存，False表示不保存
+  gen_root: null # Output root for generated results; null disables saving.
+  save_wav: False # Whether to save generated wav files.

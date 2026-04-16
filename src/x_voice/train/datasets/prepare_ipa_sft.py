@@ -66,10 +66,10 @@ def process_batch(batch_data, lang_code, tokenizer_str, sft_gen_dir):
         if not ipa_text.strip():
             continue
         
-        # 提取去掉后缀的相对路径 (例如 zh/xxx)
+        # Extract the relative path without its suffix (for example zh/xxx).
         rel_path_no_suffix = os.path.splitext(audio_path)[0]
         
-        # 拼接对应的 pt 和 json 路径
+        # Build the matching .pt and .json paths.
         pt_path = os.path.join(sft_gen_dir, f"{rel_path_no_suffix}.pt")
         json_path = os.path.join(sft_gen_dir, f"{rel_path_no_suffix}.json")
         
@@ -77,7 +77,7 @@ def process_batch(batch_data, lang_code, tokenizer_str, sft_gen_dir):
             local_fail += 1
             continue
             
-        # 读取 JSON 获取 gen_len
+        # Read gen_len from the JSON metadata.
         try:
             with open(json_path, "r", encoding="utf-8") as jf:
                 meta = json.load(jf)
@@ -126,13 +126,13 @@ def read_csv_file(csv_path, target_duration=None):
     temp_valid_lines =[]
     
     with open(csv_path, 'r', encoding='utf-8') as f:
-        header = f.readline().strip()  # 跳过表头
+        header = f.readline().strip()  # Skip the header row.
         for line in f:
             parts = line.strip().split('|')
-            if len(parts) in [3, 4]:  # path|duration|text 有效行，可选DNSMOS行
-                # 先暂存原始数据（路径、文本、时长）
+            if len(parts) in [3, 4]:  # Valid path|duration|text row, with optional DNSMOS field.
+                # Store the raw path, text, and duration first.
                 temp_valid_lines.append((parts[0], parts[2], float(parts[1])))
-            elif len(parts) == 2:  # 无duration的行
+            elif len(parts) == 2:  # Row without a duration value.
                 print("Warning: no duration. Check the metadata file")
      
     
@@ -201,13 +201,13 @@ def prepare_all(inp_dir, out_dir_root, tokenizer, dataset_name, sft_gen_dir, num
     writer.finalize()
     
     total_duration = sum(duration_list)
-    # 写入 duration.json
+    # Write duration.json.
     with open(out_dir / "duration.json", "w", encoding="utf-8") as f:
         json.dump({
-            "duration": duration_list,              # 每条样本对应的原始音频时长列表
-            "prompt_frames": prompt_frames_list,    # 每条样本对应的 prompt 长度
-            "total_hours": total_duration / 3600,   # 原始音频时长之和（小时）
-            "total_samples": total_samples          # 样本总数
+            "duration": duration_list,              # Original audio duration for each sample.
+            "prompt_frames": prompt_frames_list,    # Prompt length for each sample.
+            "total_hours": total_duration / 3600,   # Sum of original audio duration in hours.
+            "total_samples": total_samples          # Total number of samples.
         }, f, ensure_ascii=False)
 
     print("\n" + "="*50)

@@ -75,10 +75,10 @@ def process_batch(batch_data, lang_code, tokenizer_str):
 
 def read_all_metadata(input_dir):
     """
-    扫描目录下所有的 metadata_*.csv 文件
+    Scan all metadata_*.csv files under the input directory.
     """
     input_path = Path(input_dir)/'csv_stage1_debug'
-    # 匹配 metadata_zh.csv, metadata_en.csv 等
+    # Match files such as metadata_zh.csv and metadata_en.csv.
     all_files = list(input_path.glob("metadata_*_test.csv"))
     csv_files = []
     for f in all_files:
@@ -92,7 +92,7 @@ def read_all_metadata(input_dir):
     all_tasks = [] # (lang_code, file_path)
     
     for csv_file in csv_files:
-        # 解析文件名获取语言代码，如 metadata_zh.csv -> zh
+        # Extract the language code from the file name, e.g. metadata_zh.csv -> zh.
         lang_code = csv_file.stem.split('_')[1]
         if True: #lang_code in ["en"]:
             print(f"lang_code:{lang_code}")
@@ -104,26 +104,26 @@ def read_all_metadata(input_dir):
 def read_csv_file(csv_path, target_duration=None):
     items = []
     all_duration = 0
-    # 第一步：先读取所有有效行（带duration的），存储到临时列表
+    # Step 1: collect all valid rows with durations into a temporary list.
     temp_valid_lines = []
     
     with open(csv_path, 'r', encoding='utf-8') as f:
-        header = f.readline().strip()  # 跳过表头
+        header = f.readline().strip()  # Skip the header row.
         for line in f:
             parts = line.strip().split('|')
-            if len(parts) == 3:  # path|duration|text 有效行
-                # 先暂存原始数据（路径、文本、时长）
+            if len(parts) == 3:  # Valid path|duration|text row.
+                # Store the raw path, text, and duration first.
                 temp_valid_lines.append((parts[0], parts[2], float(parts[1])))
-            elif len(parts) == 2:  # 无duration的行
+            elif len(parts) == 2:  # Row without a duration value.
                 print("Warning: no duration. Check the metadata file")
     
-    # 第二步：如果指定了目标时长，先打乱有效行；否则直接使用原顺序
+    # Step 2: shuffle valid rows only when a target duration is provided.
     if target_duration is not None:
-        random.shuffle(temp_valid_lines)  # 随机打乱有效行
+        random.shuffle(temp_valid_lines)  # Shuffle valid rows.
     
-    # 第三步：遍历（打乱后的）有效行，累加时长直到达到目标
+    # Step 3: accumulate duration until the target is reached.
     for path, text, duration in temp_valid_lines:
-        # 如果指定了目标时长且已超过，停止遍历
+        # Stop once the requested duration budget has been exceeded.
         if target_duration is not None and all_duration > target_duration * 3600:
             break
         items.append((path, text, duration))
@@ -166,7 +166,7 @@ def prepare_all(inp_dir, out_dir_root, tokenizer, dataset_name, num_workers=16, 
             print(f"Loaded {len(fixed_items)} lines. Duration: {return_duration}. Starting G2P conversion.")
             main_tokenizer = get_tokenizer(lang_code, tokenizer=tokenizer)
             
-            batch_size = 1000 # 每个进程处理 1000 条
+            batch_size = 1000 # Each worker processes 1000 rows at a time.
             batches = [fixed_items[i:i + batch_size] for i in range(0, len(fixed_items), batch_size)]
             
             futures = [executor.submit(process_batch, batch, lang_code, tokenizer) for batch in batches]
@@ -178,7 +178,7 @@ def prepare_all(inp_dir, out_dir_root, tokenizer, dataset_name, num_workers=16, 
                     duration_list.append(res['duration'])
                     total_samples += 1
                     
-                    # 更新 Vocab 
+                    # Update vocabulary statistics.
                     if tokenizer == "ipa_v3":
                         tokens = str_to_list_ipa_v3(res['text']) 
                     elif tokenizer == "ipa_v5":
@@ -204,14 +204,14 @@ def prepare_all(inp_dir, out_dir_root, tokenizer, dataset_name, num_workers=16, 
             "total_samples": total_samples
         }, f, ensure_ascii=False)
         
-    # 6. 保存 Vocab
+    # 6. Save the vocabulary files.
     stats_path = out_dir / "vocab_stats.txt"
     print(f"\nSaving detailed vocabulary statistics to {stats_path}...")
     with open(stats_path, "w", encoding="utf-8") as f:
         f.write("Token\tTotalCount\tNumLangs\tLanguages\n")
         sorted_stats = sorted(global_token_stats.items(), key=lambda item: item[1]['count'], reverse=True)
         for token, stats in sorted_stats:
-            lang_str = ",".join(sorted(list(stats['langs']))) # 排序让输出稳定
+            lang_str = ",".join(sorted(list(stats['langs']))) # Sort for stable output.
             f.write(f"{token}\t{stats['count']}\t{len(stats['langs'])}\t{lang_str}\n")
             
     vocab_path = out_dir / "vocab.txt"

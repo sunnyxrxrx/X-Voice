@@ -48,11 +48,11 @@ def load_en_model(faster=False):
 
 def load_zh_model():
     local_model_path = "/inspire/hdd/project/embodied-multimodality/chenxie-25019/rixixu/paraformer"
-    print(f"[INFO] 从本地加载ASR模型: {local_model_path}")
+    print(f"[INFO] Loading ASR model from local path: {local_model_path}")
     
     model = AutoModel(
-        model=local_model_path,  # 直接填本地文件夹路径
-        disable_update=True      # 禁止联网检查更新，纯离线运行
+        model=local_model_path,  # Pass the local directory path directly.
+        disable_update=True      # Disable online update checks for fully offline execution.
     )
     return model
 
@@ -66,17 +66,17 @@ def normalize_one(hypo, truth, normalizer):
         hypo = normalizer.normalize(hypo, post=True)
     if lang[-2:] in ["zh", "ja", "ko","th"]:
         truth = " ".join([x for x in truth])
-        hypo = " ".join([x for x in hypo]) # 中文hypo自带空格
+        hypo = " ".join([x for x in hypo]) # Chinese hypotheses already contain implicit token spacing.
     truth = truth.lower()
     hypo = hypo.lower()
         
     def clean_special_chars(text):
-        # 移除所有标点来进行比较
+        # Remove punctuation before comparison.
         cleaned = "".join(
             ch for ch in text 
             if unicodedata.category(ch)[0] not in ('P', 'S') 
         )
-        # 将多个空格合并，并去掉首尾空格
+        # Merge repeated spaces and trim both ends.
         return " ".join(cleaned.split())
     
     truth = clean_special_chars(truth)
@@ -167,4 +167,3 @@ def run_asr(wav_res_text_path, res_path, normalize_text=False, faster=False, who
 
 
 run_asr(wav_res_text_path, res_path, normalize_text=True, faster=False, whole=True)
-

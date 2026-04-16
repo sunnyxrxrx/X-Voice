@@ -168,12 +168,11 @@ class CFM(nn.Module):
                 curr_ref_len = lens[b] if lens is not None else cond_seq_len
                 curr_total_len = duration[b]
                 gen_len = curr_total_len - curr_ref_len
-                # 把 Reference 填入到最后
-                # 形状: [Ref_Len, Dim]
+                # Place the reference segment at the end.
+                # Shape: [Ref_Len, Dim]
                 full_cond[b, gen_len:curr_total_len, :] = cond[b, :curr_ref_len, :]
                 
-                # Mask: 前面生成的为 False (需要预测)，后面 Ref 为 True (固定)
-                # F5-TTS 的 cond_mask 含义: True = 固定/已知, False = 未知/生成
+                # Mask: generated positions stay False (to predict), reference positions stay True (fixed).
                 cond_mask[b, gen_len:curr_total_len] = True
             cond = full_cond
         else:
@@ -244,10 +243,8 @@ class CFM(nn.Module):
             if layered:
                 pred, text_pred, null_pred = torch.chunk(pred_cfg, 3, dim=0)
                 delta_lang = pred - text_pred
-                delta_content = text_pred - null_pred  # 内容增量：从噪音到“平均发音”
+                delta_content = text_pred - null_pred  # Content delta: from noise to average pronunciation.
                 res = null_pred + (1.0 + current_cfg2) * delta_content + (1.0 + current_cfg) * delta_lang
-                # if 0.3 < t < 0.6:
-                #     print(f"content.mean: {delta_content.mean()}, lang.mean: {delta_lang.mean()}") 
             else:
                 pred, null_pred = torch.chunk(pred_cfg, 2, dim=0)
                 res = pred + (pred - null_pred) * current_cfg
@@ -301,7 +298,7 @@ class CFM(nn.Module):
         *,
         lens: int["b"] | None = None,
         noise_scheduler: str | None = None,
-        language_ids: list[str] | torch.Tensor | None, # 在 cross lingual中，传到cfm的就是id数字了
+        language_ids: list[str] | torch.Tensor | None,
     ):
         # handle raw wave
         if inp.ndim == 2:

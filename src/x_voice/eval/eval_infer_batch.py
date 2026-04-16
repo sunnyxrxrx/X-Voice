@@ -275,7 +275,7 @@ def main():
             ipa_id = get_ipa_id(in_language) 
             tokenizer_class = tokenizer_class_map[tokenizer]
             ipa_tokenizer = tokenizer_class(language=ipa_id, with_stress=True)
-            # print("词表不加重音，否则请取消注释，包括下面")
+            # print("Disable stress marks in the vocabulary by uncommenting this and the related lines below.")
             if cross_lingual:
                 ref_language= reference_languages[i]
                 ref_ipa_id = get_ipa_id(ref_language)
@@ -409,7 +409,7 @@ def main():
                     def strong_asymptotic_saturation(mel, threshold=2.8, limit=3.5, start_bin=60):
                         mel_high = mel[:, :, start_bin:]
                         def apply_limit(x, t, m):
-                            # 只有超过threshold的部分才进入tanh
+                            # Only values above the threshold enter the tanh branch.
                             margin = m - t
                             return torch.where(
                                 x < t,
@@ -427,7 +427,7 @@ def main():
                             gen = gen[: total_mel_lens[i] - ref_mel_lens[i], :].unsqueeze(0)
                         else:
                             gen = gen[ref_mel_lens[i] : total_mel_lens[i], :].unsqueeze(0)
-                            # gen = gen[ : total_mel_lens[i], :].unsqueeze(0) # 测试用
+                            # gen = gen[ : total_mel_lens[i], :].unsqueeze(0) # Temporary test path.
                         gen_mel_spec = gen.permute(0, 2, 1).to(torch.float32)
                         if mel_spec_type == "vocos":
                             generated_wave = vocoder.decode(gen_mel_spec).cpu()

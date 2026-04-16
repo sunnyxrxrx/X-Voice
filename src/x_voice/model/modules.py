@@ -695,9 +695,9 @@ class JointAttnProcessor:
                 mask = torch.ones((batch_size, x.shape[1]), device=x.device, dtype=torch.bool)
             # context_mask shape: [b, nt]
             if context_mask is None:
-                # 前向支持：如果不传 text mask，认为全可见
+                # Forward pass fallback: if no text mask is provided, treat all tokens as visible.
                 context_mask = torch.ones((batch_size, c.shape[1]), device=c.device, dtype=torch.bool)
-            # 拼接 Mask [b, n+nt]
+            # Concatenate the audio and text masks into [b, n+nt].
             joint_mask = torch.cat([mask, context_mask], dim=1)
             attn_mask = joint_mask.unsqueeze(1).unsqueeze(1) # [B, 1, 1, n+nt]
             attn_mask = attn_mask.expand(batch_size, attn.heads, query.shape[-2], key.shape[-2])
@@ -788,14 +788,14 @@ class DiTBlock(nn.Module):
             x = x.to(torch.float32)
             norm, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.attn_norm(x, emb=t)
             norm = norm.to(torch.float16)
-            attn_output = self.attn(x=norm, mask=mask, rope=rope) # 16下运算
+            attn_output = self.attn(x=norm, mask=mask, rope=rope) # Runs in float16.
 
             # process attention output for input x
-            x = x + gate_msa.unsqueeze(1) * attn_output # 32下运算
-            norm = self.ff_norm(x) * (1 + scale_mlp[:, None]) + shift_mlp[:, None] # 32下运算
+            x = x + gate_msa.unsqueeze(1) * attn_output # Runs in float32.
+            norm = self.ff_norm(x) * (1 + scale_mlp[:, None]) + shift_mlp[:, None] # Runs in float32.
             norm = norm.to(torch.float16)
-            ff_output = self.ff(norm).to(torch.float32) # 16下运算
-            x = x + gate_mlp.unsqueeze(1) * ff_output # 32下运算
+            ff_output = self.ff(norm).to(torch.float32) # Runs in float16.
+            x = x + gate_mlp.unsqueeze(1) * ff_output # Runs in float32.
 
         else:
             # pre-norm & modulation for attention input

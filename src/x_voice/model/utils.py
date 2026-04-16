@@ -119,17 +119,17 @@ def get_ipa_id(in_language: str) -> str:
     }
     return LANG_MAP.get(in_language, in_language)
 
-# 第三版本 按照空格分词，不拆分音节，只拆分音节和声调(123等)
+# Version 3 tokenizes by spaces and only splits phonemes from tone markers (123, etc.).
 def str_to_list_ipa_v3(phonemized: str) -> List[str]:
     fields = []
-    # 先按_切分
+    # Split by spaces first.
     words = phonemized.split(" ")
     for i, word in enumerate(words):
         if not word: continue
         processed_tokens = []
-        # 再按音素分隔符|切分
+        # Then split each word by the phoneme separator "|".
         tokens = word.split("|")
-        # 过滤空字符串、分割音素音调
+        # Drop empty fields and separate phonemes from tone digits.
         for token in tokens:
             if not token: continue
             match = re.match(r'^([^0-9]+)([0-9]+)$', token)
@@ -148,19 +148,19 @@ def str_to_list_ipa_v3(phonemized: str) -> List[str]:
 
 TOKEN_EXTRACTOR = re.compile(r"([a-zA-Z\u00C0-\u02AF]+)|(.)")
 IPA_NORMALIZATION_MAP = {
-    # 符号统一化
-    # 元音+辅音/辅音+元音
+    # Normalize unstable symbol combinations.
+    # vowel+consonant / consonant+vowel
     "eɪɛ": "eɪ|ɛ", "zeɪɛ": "z|eɪ|ɛ", "teɪɛ": "t|eɪ|ɛ", "əeɪ": "ə|eɪ", "aɪɛ": "aɪ|ɛ", "taɪ": "t|aɪ", 
     "jap": "ja|p", "jud": "ju|d", "jaɛ": "ja|ɛ", "ʃja": "ʃ|ja", "jat": "ja|t", "ɑja": "ɑ|ja", "əlɹ": "əl|ɹ", "əlf": "əl|f", "oʊw": "oʊ|w", 
     "daʊ":"d|aʊ", "meɪ":"m|eɪ", "taʊ":"t|aʊ", "daɪ":"d|aɪ",
 }
 GARBAGE_CHARS = r'[&ㄜでかすπ%@]'
 
-# 先尝试匹配（连续的字母 / 扩展拉丁字符），作为一个完整 token；
-# 若匹配不到，则匹配任意单个字符，每个字符单独作为一个 token；
+# First try to match a full alphabetic / extended-Latin chunk as one token.
+# If that fails, fall back to matching individual characters.
 def str_to_list_ipa_v6(phonemized: str) -> List[str]:
     fields = []
-    # 先按空格切分
+    # Split by spaces first.
     text = re.sub(GARBAGE_CHARS, '', phonemized)
     sorted_map_keys = sorted(IPA_NORMALIZATION_MAP.keys(), key=len, reverse=True)
     for key in sorted_map_keys:
@@ -169,14 +169,14 @@ def str_to_list_ipa_v6(phonemized: str) -> List[str]:
     for i, word in enumerate(words):
         if not word: continue
         processed_tokens = []
-        # 再按音素分隔符|切分
+        # Then split each word by the phoneme separator "|".
         tokens = word.split("|")
-        # 过滤空字符串、分割音素音调
+        # Drop empty fields and extract normalized tokens.
         for token in tokens:
             if not token: continue
             for m in TOKEN_EXTRACTOR.finditer(token):
-                text_chunk = m.group(1) # 字母块
-                symbol_chunk = m.group(2) # 单个符号
+                text_chunk = m.group(1) # Alphabetic chunk.
+                symbol_chunk = m.group(2) # Single symbol.
                 if text_chunk:
                     fields.append(text_chunk)
                 elif symbol_chunk:
@@ -188,7 +188,7 @@ def str_to_list_ipa_v6(phonemized: str) -> List[str]:
 def str_to_list_ipa_all(ipa_string: str, tokenizer, language_id=None) -> List[str]:
     fields = []
     if tokenizer == "ipa_v3":
-        # print("测试，在utils.py line292 取消注释！")
+        # print("Uncomment this for tokenizer debugging in utils.py.")
         fields = str_to_list_ipa_v3(ipa_string)
     elif tokenizer == "ipa_v6":
         fields = str_to_list_ipa_v6(ipa_string)

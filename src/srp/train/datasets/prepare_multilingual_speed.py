@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from srp.model.utils import count_syllables, extract_pyphen_text
 
 TRAIN_HOURS_PER_LANG = 250
-VAL_SAMPLES_PER_LANG = 3 # 100
+VAL_SAMPLES_PER_LANG = 100
 VALID_PUNCTUATION = '\'",.?!;:。，、！？；：「」『』【】-'
 
 def check_valid_chars(input_str: str, lang) -> bool:
@@ -101,7 +101,7 @@ def select_split_items(raw_items, lang_code: str, rng: random.Random, root_dir: 
     val_durations = []
     train_duration_sum = 0.0
     last_print_duration = 0
-    PRINT_INTERVAL_SEC = 10 * 3600  
+    PRINT_INTERVAL_SEC = 10 * 3600
     for audio_path, text, duration in shuffled_items:
         audio_dir = root_dir / audio_path
         if not audio_dir.exists():
@@ -122,8 +122,6 @@ def select_split_items(raw_items, lang_code: str, rng: random.Random, root_dir: 
             train_durations.append(duration)
             train_duration_sum += duration
             if train_duration_sum - last_print_duration >= PRINT_INTERVAL_SEC:
-                collected_hours = train_duration_sum / 3600
-                print(collected_hours)
                 last_print_duration = train_duration_sum
 
         if len(val_results) >= VAL_SAMPLES_PER_LANG and train_duration_sum >= TRAIN_HOURS_PER_LANG * 3600:

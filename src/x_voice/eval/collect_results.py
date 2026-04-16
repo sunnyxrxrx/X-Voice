@@ -34,7 +34,7 @@ def main():
             lang_path = os.path.join(decode_dir, lang)
         row = {"Language": lang, "WER": "N/A", "SIM": "N/A", "UTMOS": "N/A", "DNSMOS": "N/A"}
         
-        # 解析 WER
+        # Parse WER
         wer_file = os.path.join(lang_path, "wav_res_ref_text.wer")
         if os.path.exists(wer_file):
             with open(wer_file, 'r') as f:
@@ -43,7 +43,7 @@ def main():
                 if match:
                     row["WER"] = match.group(1)
 
-        # 解析 SIM
+        # Parse SIM
         sim_file = os.path.join(lang_path, "spk_simi_scores.txt")
         if os.path.exists(sim_file):
             with open(sim_file, 'r') as f:
@@ -53,7 +53,7 @@ def main():
                         row["SIM"] = line.split()[-1]
                         break
 
-        # 解析 UTMOS
+        # Parse UTMOS
         utmos_file = os.path.join(lang_path, "_utmos_results.jsonl")
         if os.path.exists(utmos_file):
             with open(utmos_file, 'r') as f:
@@ -62,7 +62,7 @@ def main():
                 if match:
                     row["UTMOS"] = match.group(1)
                 else:
-                    # 备选方案：如果没找到统计行，手动计算平均值
+                    # Fallback: compute the average manually if no summary line is found.
                     f.seek(0)
                     scores = []
                     for line in f:
@@ -75,7 +75,7 @@ def main():
                     if scores:
                         row["UTMOS"] = f"{sum(scores) / len(scores):.4f}"
 
-        # 解析 DNSMOS
+        # Parse DNSMOS
         dns_file = os.path.join(lang_path, "dnsmos_mean.txt")
         if os.path.exists(dns_file):
             with open(dns_file, 'r') as f:
@@ -83,18 +83,18 @@ def main():
 
         results.append(row)
 
-    # 创建 DataFrame
+    # Create the summary DataFrame.
     df = pd.DataFrame(results)
 
     print("\n" + "="*50)
-    print("汇总评估结果")
+    print("Evaluation summary")
     print("="*50)
     print(df.to_string(index=False))
     print("="*50)
 
-    # 保存到本地 CSV
+    # Save the summary CSV locally.
     df.to_csv(summary_file, index=False)
-    print(f"结果已保存至: {summary_file}")
+    print(f"Results saved to: {summary_file}")
     
 if __name__ == "__main__":
     main()

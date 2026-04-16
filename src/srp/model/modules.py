@@ -112,7 +112,7 @@ class MelSpec(nn.Module):
         mel_spec_type="vocos",
     ):
         super().__init__()
-        assert mel_spec_type in ["vocos", "bigvgan"], print("We only support two extract mel backend: vocos or bigvgan")
+        assert mel_spec_type in ["vocos", "bigvgan"], print("Only two mel extraction backends are supported: vocos and bigvgan")
 
         self.n_fft = n_fft
         self.hop_length = hop_length
@@ -157,7 +157,7 @@ class SinusPositionEmbedding(nn.Module):
         emb = math.log(10000) / (half_dim - 1)
         emb = torch.exp(torch.arange(half_dim, device=device).float() * -emb) # emb.shape: [half_dim]
         emb = scale * x.unsqueeze(1) * emb.unsqueeze(0)                       # emb.shape: [b, half_dim]
-        #  沿着最后一个维度（特征维度）将正弦和余弦结果拼接起来
+        # Concatenate sine and cosine features along the last dimension.
         emb = torch.cat((emb.sin(), emb.cos()), dim=-1)                       # emb.shape: [b, self.dim]
         return emb
 

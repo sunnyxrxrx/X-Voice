@@ -279,7 +279,7 @@ class CFM_SFT(nn.Module):
             if layered:
                 pred, text_pred, null_pred = torch.chunk(pred_cfg, 3, dim=0)
                 delta_lang = pred - text_pred
-                delta_content = text_pred - null_pred  # 内容增量：从噪音到“平均发音”
+                delta_content = text_pred - null_pred  # Content delta: from noise to average pronunciation.
                 res = null_pred + (1.0 + current_cfg2) * delta_content + (1.0 + current_cfg) * delta_lang
                 # if 0.3 < t < 0.6:
                 #     print(f"content.mean: {delta_content.mean()}, lang.mean: {delta_lang.mean()}") 
@@ -337,7 +337,7 @@ class CFM_SFT(nn.Module):
         lens: int["b"] | None = None,
         prompt_lens: int["b"] | None = None,
         noise_scheduler: str | None = None,
-        language_ids: list[str] | torch.Tensor | None, # 在 cross lingual中，传到cfm的就是id数字了
+        language_ids: list[str] | torch.Tensor | None, # Cross-lingual mode passes numeric language ids into CFM.
     ):
         # handle raw wave
         if inp.ndim == 2:

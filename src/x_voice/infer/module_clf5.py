@@ -59,14 +59,14 @@ class GaussianCrossEntropyLoss(nn.Module):
         # gt
         centers = y_true.unsqueeze(-1)  # shape: [b, 1]
         
-        # 位置索引
+        # Position indices.
         positions = torch.arange(self.num_classes, device=device).float()  # shape: [num_classes]
         positions = positions.expand(y_true.shape[0], -1)  # shape: [b, num_classes]
         
-        # sigma
+        # Sigma.
         sigma = self.sigma_factor * torch.ones_like(y_true, device=device).float()
         
-        # 高斯分布
+        # Gaussian targets.
         diff = positions - centers  # (c-gt).shape: [b, num_classes]
         y_true_soft = torch.exp(-(diff.pow(2) / (2 * sigma.pow(2).unsqueeze(-1))))  # shape: [b, num_classes]
         
@@ -132,7 +132,7 @@ class SpeedTransformer(nn.Module):
             
         # sequence pooling
         weights = self.pool(x)                      # shape = [b, seq_len, 1]
-        # 将 padding 位置的 weights 设为 -inf
+        # Force padding positions to negative infinity before softmax.
         weights.masked_fill_(~mask.unsqueeze(-1), -torch.finfo(weights.dtype).max)
         weights = F.softmax(weights, dim=1)         # shape = [b, seq_len, 1]
         x = (x * weights).sum(dim=1)                # shape = [b, h]
