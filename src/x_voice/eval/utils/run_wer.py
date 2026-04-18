@@ -31,27 +31,24 @@ lang = sys.argv[3] # zh or en
 
 device = "cuda" if torch.cuda.is_available() else 'cpu'
 
-def load_en_model(faster=False):
-   
+def load_en_model(faster=False, asr_ckpt_dir=""):
+    if asr_ckpt_dir == "":
+        asr_ckpt_dir = "large-v3"
     if faster:
         from faster_whisper import WhisperModel
-
-        model_id = "large-v3" 
-        print(f"[INFO] Using asr model: faster whisper {model_id}")
-        model = WhisperModel(model_id, device="cuda", compute_type="float16")
+        print(f"[INFO] Using asr model: faster whisper {asr_ckpt_dir}")
+        model = WhisperModel(asr_ckpt_dir, device="cuda", compute_type="float16")
     else:
-        model_id = "large-v3"
-        print(f"[INFO] Using asr model: whisper {model_id}")
-        model = whisper.load_model(model_id).to(device)
+        print(f"[INFO] Using asr model: whisper {asr_ckpt_dir}")
+        model = whisper.load_model(asr_ckpt_dir).to(device)
         model.eval()
     return model
 
-def load_zh_model():
-    local_model_path = "/inspire/hdd/project/embodied-multimodality/chenxie-25019/rixixu/paraformer"
-    print(f"[INFO] Loading ASR model from local path: {local_model_path}")
-    
+def load_zh_model(asr_ckpt_dir=""):
+    if asr_ckpt_dir == "":
+        asr_ckpt_dir = "paraformer-zh"
     model = AutoModel(
-        model=local_model_path,  # Pass the local directory path directly.
+        model=asr_ckpt_dir,  # Pass the local directory path directly.
         disable_update=True      # Disable online update checks for fully offline execution.
     )
     return model
@@ -96,9 +93,11 @@ def process_one(hypo, truth):
 
 def run_asr(wav_res_text_path, res_path, normalize_text=False, faster=False, whole=False):
     if lang[-2:] in ["zh", "hard_zh"]:
-        model = load_zh_model()
+        asr_ckpt_dir = ""
+        model = load_zh_model(asr_ckpt_dir)
     else:
-        model = load_en_model(faster)
+        asr_ckpt_dir = ""
+        model = load_en_model(faster, asr_ckpt_dir)
 
     params = []
     for line in open(wav_res_text_path).readlines():

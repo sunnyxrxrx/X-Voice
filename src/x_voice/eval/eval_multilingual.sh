@@ -1,10 +1,9 @@
-# 修改这里的配置
 # bash src/x_voice/eval/eval_multilingual.sh
-asr_gpu=1
+num_gpus=1
 task=zero_shot
 dataset=x_voice_eval # lemas_eval
-ckpt=70000
 exp_name=F5TTS_v1_Base_multilingual_full_catada_sft_v2
+ckpt=70000
 drop_text=True
 test_set="cs"
 # ref_set="en it zh ru ko en ko ru zh it"
@@ -46,7 +45,7 @@ if [ "$reverse" = "True" ]; then
     reverse_args="--reverse"
 fi
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )" # to eval/
-PROJECT_ROOT="$( cd "$SCRIPT_DIR/../../../" && pwd )" # to F5-TTS/
+PROJECT_ROOT="$( cd "$SCRIPT_DIR/../../../" && pwd )" # to X-Voice/
 cv3_dir="${PROJECT_ROOT}/data/${dataset}"
 
 if [ "${decoupled}" = "True" ]; then
@@ -55,7 +54,7 @@ else
     decode_dir="${PROJECT_ROOT}/results/${exp_name}_${ckpt}/${dataset}/${sp_type}_seed${seed}_euler_nfe${nfe}_vocos_ss-1_schedule${cfg_schedule}_cfg${cfg_strength}_speed${speed}zero_shot"
 fi
 
-accelerate launch --main_process_port 29507 --num_processes ${asr_gpu} src/x_voice/eval/eval_infer_batch.py \
+accelerate launch --main_process_port 29507 --num_processes ${num_gpus} src/x_voice/eval/eval_infer_batch.py \
     -s ${seed} -n "${exp_name}" -c ${ckpt} -t "${dataset}" -nfe ${nfe} --speed ${speed} \
     -l "${test_set// /,}" -rl "${ref_set// /,}" \
     --cfg_strength ${cfg_strength} \
@@ -82,21 +81,21 @@ dumpdir=${cv3_dir}/${task}
 test_gt="false"
 
 for ((i=0; i<${#test_langs[@]}; i++)); do
-    lang=${test_langs[$i]}     # 当前目标语种
-    ref_lang=${ref_langs[$i]} # 当前参考语种
+    lang=${test_langs[$i]}
+    ref_lang=${ref_langs[$i]}
     # WER
     echo "[INFO] Scoring WER for ${decode_dir}/${lang}"
-    bash utils/cal_wer.sh ${dumpdir}/${lang}/text  ${decode_dir}/${ref_lang}_${lang} ${lang} ${asr_gpu} "${test_gt}"
+    bash utils/cal_wer.sh ${dumpdir}/${lang}/text  ${decode_dir}/${ref_lang}_${lang} ${lang} ${num_gpus} "${test_gt}"
     find ${decode_dir}/${ref_lang}_${lang}/wavs -name *.wav | awk -F '/' '{print $NF, $0}' | sed "s@\.wav @ @g" > ${decode_dir}/${ref_lang}_${lang}/wav.scp
     
     # SIM
     echo "[INFO] Scoring SIM: Comparing ${lang} output with ${ref_lang} prompt" 
     python eval_similarity.py \
-    --ckpt_path ${PROJECT_ROOT}/wavlm_large_finetune.pth \
+    --wavlm_ckpt_dir ${PROJECT_ROOT}/wavlm_large_finetune.pth \
     --prompt_wavs ${dumpdir}/${ref_lang}/prompt_wav.scp \
     --hyp_wavs ${decode_dir}/${ref_lang}_${lang}/wav.scp \
     --log_file ${decode_dir}/${ref_lang}_${lang}/spk_simi_scores.txt \
-    --devices "0" \
+    --num_gpus ${num_gpus} \
     --decode_dir ${decode_dir}\
     --dump_dir ${cv3_dir}
 
