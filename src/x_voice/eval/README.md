@@ -68,5 +68,6 @@ To ensure a fair comparison, we kept the original evaluation code used in F5-TTS
 > WavLM model must be downloaded and your `wavlm_ckpt_dir` path updated in [eval_seedtts_testset.py](https://github.com/sunnyxrxrx/X-Voice/blob/main/src/x_voice/eval/eval_seedtts_testset.py#L52).
 
 ```
-bash eval_multilingual_seedtts.sh
+bash src/x_voice/eval/eval_multilingual_seedtts.sh
 ```
+Arguments can refer to [Evaluation on LEMAS / X-Voice](#argument-reference).
