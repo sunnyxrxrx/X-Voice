@@ -63,6 +63,10 @@ cfg_strength = 2.0
 sway_sampling_coef = -1.0
 speed = 1.0
 fix_duration = None
+layered = False
+cfg_strength2 = 4.0
+cfg_schedule = "square"
+cfg_decay_time = 0.0
 
 # -----------------------------------------
 

@@ -18,13 +18,25 @@ from hydra.utils import get_class
 from omegaconf import OmegaConf
 from unidecode import unidecode
 
+try:
+    from langdetect import DetectorFactory, LangDetectException, detect
+
+    DetectorFactory.seed = 0
+except ImportError:
+    LangDetectException = Exception
+    detect = None
+
 from x_voice.infer.module_clf5 import SpeedPredictor
 from x_voice.infer.utils_infer import (
     cfg_strength,
+    cfg_decay_time as cfg_decay_time_default,
+    cfg_schedule as cfg_schedule_default,
+    cfg_strength2 as cfg_strength2_default,
     cross_fade_duration,
     device,
     fix_duration,
     hop_length,
+    layered as layered_default,
     load_checkpoint,
     load_model,
     load_model_sft,
@@ -42,16 +54,68 @@ from x_voice.infer.utils_infer import (
     win_length,
 )
 from x_voice.model.utils import convert_char_to_pinyin, get_ipa_id, str_to_list_ipa_all
-from x_voice.train.datasets.ipa_tokenizer import PhonemizeTextTokenizer
-from x_voice.train.datasets.ipa_v2_tokenizer import PhonemizeTextTokenizer as PhonemizeTextTokenizer_v2
 from x_voice.train.datasets.ipa_v3_tokenizer import PhonemizeTextTokenizer as PhonemizeTextTokenizer_v3
-from x_voice.train.datasets.ipa_v5_tokenizer import PhonemizeTextTokenizer as PhonemizeTextTokenizer_v5
 from x_voice.train.datasets.ipa_v6_tokenizer import PhonemizeTextTokenizer as PhonemizeTextTokenizer_v6
 from srp.model.utils import count_syllables_
 
 
 DROP_TEXT_PLACEHOLDER = "Useless here."
 DEFAULT_SRP_MODEL_CFG = files("srp").joinpath("configs/SpeedPredict_Multilingual.yaml")
+_LANGDETECT_WARNED = False
+
+
+def normalize_lang_code(lang_code):
+    if not lang_code:
+        return None
+    return lang_code.strip().lower().replace("_", "-").split("-", 1)[0]
+
+
+def parse_voice_lang_tag(tag_content, voice_names=None, default_voice="main"):
+    tag_content = tag_content.strip()
+
+    if not tag_content:
+        return default_voice, None
+
+    if "|" in tag_content:
+        voice_name, segment_lang = tag_content.split("|", 1)
+        voice_name = voice_name.strip() or default_voice
+        return voice_name, normalize_lang_code(segment_lang)
+
+    lower_tag = tag_content.lower()
+    if lower_tag.startswith("lang:"):
+        return default_voice, normalize_lang_code(tag_content.split(":", 1)[1])
+    if lower_tag.startswith("lang="):
+        return default_voice, normalize_lang_code(tag_content.split("=", 1)[1])
+
+    if voice_names is not None and tag_content in voice_names:
+        return tag_content, None
+
+    normalized_lang = normalize_lang_code(tag_content)
+    if normalized_lang and re.fullmatch(r"[a-z]{2,3}", normalized_lang):
+        return default_voice, normalized_lang
+
+    return tag_content, None
+
+
+def detect_segment_lang(gen_text, fallback_lang):
+    global _LANGDETECT_WARNED
+
+    if detect is None:
+        if not _LANGDETECT_WARNED:
+            print("Warning: langdetect is not installed, automatic segment language detection is disabled.")
+            _LANGDETECT_WARNED = True
+        return fallback_lang
+
+    text = gen_text.strip()
+    if len(text) < 3:
+        return fallback_lang
+
+    try:
+        detected_lang = normalize_lang_code(detect(text))
+    except LangDetectException:
+        return fallback_lang
+
+    return detected_lang or fallback_lang
 
 
 def count(text, lang):
@@ -142,6 +206,13 @@ def infer_process_clf5(
     audio, sr = torchaudio.load(ref_audio)
     max_syllables, pred_speed = get_max_syllables(speakingrate_model, (audio, sr))
     gen_text_batches = chunk_text_clf5(gen_text, lang, max_syllables)
+    prepared_batches = [
+        {
+            "gen_text": batch_text,
+            "final_text_list": prepare_infer_text(batch_text, tokenizer, lang, ipa_tokenizer),
+        }
+        for batch_text in gen_text_batches
+    ]
     for i, batch_text in enumerate(gen_text_batches):
         print(f"gen_text {i}", batch_text)
     print("\n")
@@ -151,10 +222,8 @@ def infer_process_clf5(
         infer_batch_process_clf5(
             (audio, sr),
             pred_speed,
-            gen_text_batches,
+            prepared_batches,
             lang,
-            tokenizer,
-            ipa_tokenizer,
             model_obj,
             vocoder,
             mel_spec_type=mel_spec_type,
@@ -176,8 +245,6 @@ def infer_batch_process_clf5(
     pred_speed,
     gen_text_batches,
     lang,
-    tokenizer,
-    ipa_tokenizer,
     model_obj,
     vocoder,
     mel_spec_type="vocos",
@@ -209,11 +276,14 @@ def infer_batch_process_clf5(
     spectrograms = []
 
     def process_batch(gen_text):
+        final_text_list = None
+        if isinstance(gen_text, dict):
+            final_text_list = gen_text.get("final_text_list")
+            gen_text = gen_text.get("gen_text", "")
+
         local_speed = speed
         if count(gen_text, lang) < 4:
             local_speed = 0.5
-
-        final_text_list = prepare_infer_text(gen_text, tokenizer, lang, ipa_tokenizer)
 
         ref_audio_len = audio.shape[-1] // hop_length
         if fix_duration is not None:
@@ -233,6 +303,10 @@ def infer_batch_process_clf5(
                 cfg_strength=cfg_strength,
                 sway_sampling_coef=sway_sampling_coef,
                 language_ids=[lang],
+                layered=layered,
+                cfg_schedule=cfg_schedule,
+                cfg_decay_time=cfg_decay_time,
+                cfg_strength2=cfg_strength2,
             )
 
             generated = generated.to(torch.float32)
@@ -454,6 +528,32 @@ parser.add_argument(
     type=str,
     help="Language code for syllable counting, e.g. en/zh/ja/th/vi",
 )
+parser.add_argument(
+    "--auto_detect_lang",
+    action="store_true",
+    help="When a segment has no explicit language tag, auto-detect its language from text.",
+)
+parser.add_argument(
+    "--layered",
+    action="store_true",
+    help=f"Enable layered CFG, default {layered_default}.",
+)
+parser.add_argument(
+    "--cfg_strength2",
+    type=float,
+    help=f"Secondary CFG strength for layered mode, default {cfg_strength2_default}.",
+)
+parser.add_argument(
+    "--cfg_schedule",
+    type=str,
+    choices=["square", "cosine", "none"],
+    help=f"CFG schedule type, default {cfg_schedule_default}.",
+)
+parser.add_argument(
+    "--cfg_decay_time",
+    type=float,
+    help=f"CFG schedule decay start time in [0, 1], default {cfg_decay_time_default}.",
+)
 args = parser.parse_args()
 
 
@@ -495,6 +595,18 @@ speed = args.speed or config.get("speed", speed)
 fix_duration = args.fix_duration or config.get("fix_duration", fix_duration)
 device = args.device or config.get("device", device)
 lang = args.lang or config.get("lang", "en")
+auto_detect_lang = args.auto_detect_lang or config.get("auto_detect_lang", False)
+layered = args.layered or config.get("layered", layered_default)
+cfg_strength2 = (
+    args.cfg_strength2 if args.cfg_strength2 is not None else config.get("cfg_strength2", cfg_strength2_default)
+)
+cfg_schedule = (
+    args.cfg_schedule if args.cfg_schedule is not None else config.get("cfg_schedule", cfg_schedule_default)
+)
+cfg_decay_time = (
+    args.cfg_decay_time if args.cfg_decay_time is not None else config.get("cfg_decay_time", cfg_decay_time_default)
+)
+cfg_decay_time = max(0.0, min(1.0, float(cfg_decay_time)))
 
 if "infer/examples/" in ref_audio:
     ref_audio = str(files("x_voice").joinpath(f"{ref_audio}"))
@@ -539,17 +651,33 @@ srp_cfg = OmegaConf.load(srp_model_cfg_file)
 srp_arch = OmegaConf.to_container(srp_cfg.model.arch, resolve=True)
 srp_mel_spec_kwargs = OmegaConf.to_container(srp_cfg.model.mel_spec, resolve=True)
 tokenizer_class_map = {
-    "ipa": PhonemizeTextTokenizer,
-    "ipa_v2": PhonemizeTextTokenizer_v2,
     "ipa_v3": PhonemizeTextTokenizer_v3,
-    "ipa_v5": PhonemizeTextTokenizer_v5,
     "ipa_v6": PhonemizeTextTokenizer_v6,
 }
 ipa_tokenizer = None
+ipa_tokenizer_cache = {}
 if tokenizer in tokenizer_class_map:
     ipa_id = get_ipa_id(lang)
     tokenizer_class = tokenizer_class_map[tokenizer]
     ipa_tokenizer = tokenizer_class(language=ipa_id, with_stress=True)
+    ipa_tokenizer_cache[lang] = ipa_tokenizer
+
+
+def get_ipa_tokenizer_for_lang(segment_lang):
+    if tokenizer not in tokenizer_class_map:
+        return None
+
+    if segment_lang in ipa_tokenizer_cache:
+        return ipa_tokenizer_cache[segment_lang]
+
+    tokenizer_class = tokenizer_class_map[tokenizer]
+    try:
+        ipa_id = get_ipa_id(segment_lang)
+        ipa_tokenizer_cache[segment_lang] = tokenizer_class(language=ipa_id, with_stress=True)
+        return ipa_tokenizer_cache[segment_lang]
+    except Exception:
+        print(f"Warning: failed to build IPA tokenizer for '{segment_lang}', fallback to '{lang}'.")
+        return ipa_tokenizer
 
 repo_name, ckpt_step, ckpt_type = "F5-TTS", 1250000, "safetensors"
 
@@ -630,33 +758,44 @@ def main():
         print("ref_audio_", voices[voice]["ref_audio"], "\n\n")
 
     generated_audio_segments = []
-    reg1 = r"(?=\[\w+\])"
+    reg1 = r"(?=\[[^\[\]]+\])"
     chunks = re.split(reg1, gen_text)
-    reg2 = r"\[(\w+)\]"
+    reg2 = r"^\[([^\[\]]+)\]"
     for text in chunks:
         if not text.strip():
             continue
+
+        segment_lang = None
         match = re.match(reg2, text)
         if match:
-            voice = match[1]
+            voice, segment_lang = parse_voice_lang_tag(match[1], voice_names=voices.keys())
         else:
             print("No voice tag found, using main.")
             voice = "main"
+
         if voice not in voices:
             print(f"Voice {voice} not found, using main.")
             voice = "main"
-        text = re.sub(reg2, "", text)
+
+        text = re.sub(reg2, "", text, count=1)
         ref_audio_ = voices[voice]["ref_audio"]
         local_speed = voices[voice].get("speed", speed)
         gen_text_ = text.strip()
-        print(f"Voice: {voice}")
+
+        if segment_lang is None and auto_detect_lang:
+            segment_lang = detect_segment_lang(gen_text_, lang)
+        if segment_lang is None:
+            segment_lang = lang
+
+        segment_ipa_tokenizer = get_ipa_tokenizer_for_lang(segment_lang)
+        print(f"Voice: {voice}, lang: {segment_lang}")
         audio_segment, final_sample_rate, _ = infer_process_clf5(
             speakingrate_model,
             ref_audio_,
             gen_text_,
-            lang,
+            segment_lang,
             tokenizer,
-            ipa_tokenizer,
+            segment_ipa_tokenizer,
             ema_model,
             vocoder,
             mel_spec_type=vocoder_name,
