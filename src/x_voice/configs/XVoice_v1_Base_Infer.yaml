@@ -1,12 +1,12 @@
 datasets:
-  name: multilingual_xrx_test_gendata # Emilia_ZH_EN  # dataset name
+  name: multilingual_gendata # Emilia_ZH_EN  # dataset name
   batch_size_per_gpu: 57600
   batch_size_type: frame  # frame | sample
   max_samples: 64  # max sequences per batch if use frame-wise batch_size. we set 32 for small models, 64 for base models
   num_workers: 16
 
 source:
-  expname: XVoice_v1_Base_multilingual_full_catada_stress_nomask
+  expname: XVoice_v1_Base_Stage1
   ckptstep: 600000
 
 infer:

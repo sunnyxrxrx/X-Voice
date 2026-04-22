@@ -60,6 +60,7 @@ from srp.model.utils import count_syllables_
 
 
 DROP_TEXT_PLACEHOLDER = "Useless here."
+DEFAULT_MODEL_NAME = "XVoice_v1_Base_Stage2"
 DEFAULT_SRP_MODEL_CFG = files("srp").joinpath("configs/SpeedPredict_Multilingual.yaml")
 _LANGDETECT_WARNED = False
 
@@ -383,8 +384,8 @@ parser.add_argument(
     "-c",
     "--config",
     type=str,
-    default=os.path.join(files("x_voice").joinpath("infer/examples/basic"), "basic.toml"),
-    help="The configuration file, default see infer/examples/basic/basic.toml",
+    default=None,
+    help="Optional TOML configuration file path. If omitted, use code defaults + explicit CLI args.",
 )
 parser.add_argument(
     "-m",
@@ -557,13 +558,19 @@ parser.add_argument(
 args = parser.parse_args()
 
 
-config = tomli.load(open(args.config, "rb"))
+if args.config:
+    config = tomli.load(open(args.config, "rb"))
+else:
+    config = {}
 
-model = args.model or config.get("model", "F5TTS_v1_Base")
+model = args.model or config.get("model", str(DEFAULT_MODEL_NAME))
+model_cfg_file = args.model_cfg or config.get("model_cfg", str(files("x_voice").joinpath(f"configs/{model}.yaml")))
+srp_model_cfg_file = args.srp_model_cfg or config.get("srp_model_cfg", str(DEFAULT_SRP_MODEL_CFG))
+# if still None, will get from model_cfg_file later
+vocab_file = args.vocab_file or config.get("vocab_file", "")
+# if still None, will download online later
 ckpt_file = args.ckpt_file or config.get("ckpt_file", "")
 srp_ckpt_file = args.srp_ckpt_file or config.get("srp_ckpt_file", "")
-srp_model_cfg_file = args.srp_model_cfg or config.get("srp_model_cfg", str(DEFAULT_SRP_MODEL_CFG))
-vocab_file = args.vocab_file or config.get("vocab_file", "")
 
 ref_audio = args.ref_audio or config.get("ref_audio", "infer/examples/basic/basic_ref_en.wav")
 _ignored_ref_text = args.ref_text if args.ref_text is not None else config.get("ref_text", "")
@@ -627,6 +634,7 @@ if save_chunk:
     if not os.path.exists(output_chunk_dir):
         os.makedirs(output_chunk_dir)
 
+# TODO. support custom local vocoder path via CLI/config
 if vocoder_name == "vocos":
     vocoder_local_path = "my_vocoder/vocos-mel-24khz"
 elif vocoder_name == "bigvgan":
@@ -636,9 +644,8 @@ vocoder = load_vocoder(
     vocoder_name=vocoder_name, is_local=load_vocoder_from_local, local_path=vocoder_local_path, device=device
 )
 
-model_cfg = OmegaConf.load(
-    args.model_cfg or config.get("model_cfg", str(files("x_voice").joinpath(f"configs/{model}.yaml")))
-)
+model_cfg = OmegaConf.load(model_cfg_file)
+
 model_cls = get_class(f"x_voice.model.{model_cfg.model.backbone}")
 model_arc = model_cfg.model.arch
 sft = bool(model_cfg.model.get("sft", False))
@@ -646,6 +653,10 @@ use_total_text = bool(model_cfg.model.get("use_total_text", False))
 tokenizer = model_cfg.model.tokenizer
 tokenizer_path = model_cfg.model.get("tokenizer_path", None)
 dataset_name = model_cfg.datasets.name
+
+if vocab_file is None:
+    vocab_file = str(files("x_voice").joinpath(f"data/{dataset_name}_{tokenizer}/vocab.txt"))
+
 tts_mel_spec_kwargs = OmegaConf.to_container(model_cfg.model.mel_spec, resolve=True)
 srp_cfg = OmegaConf.load(srp_model_cfg_file)
 srp_arch = OmegaConf.to_container(srp_cfg.model.arch, resolve=True)
@@ -679,6 +690,7 @@ def get_ipa_tokenizer_for_lang(segment_lang):
         print(f"Warning: failed to build IPA tokenizer for '{segment_lang}', fallback to '{lang}'.")
         return ipa_tokenizer
 
+# TODO. support our models and their corresponding default checkpoints
 repo_name, ckpt_step, ckpt_type = "F5-TTS", 1250000, "safetensors"
 
 if model != "F5TTS_Base":
@@ -700,7 +712,10 @@ if not ckpt_file:
 if not srp_ckpt_file:
     srp_ckpt_file = str(cached_path("hf://QingyuLiu1/Cross-Lingual_F5-TTS/syllables_gce_20000.safetensors"))
 
-print(f"Using {model}...")
+print(f"Using {model}\nCheckpoint: {ckpt_file}")
+print(f"Using SRP checkpoint: {srp_ckpt_file}")
+print(f"Using vocoder: {vocoder_name}")
+print(f"Using vocab file: {vocab_file}")
 if sft:
     ema_model = load_model_sft(
         model_cls,

@@ -1,177 +1,150 @@
-# Inference
+# CLI Inference Instructions 
 
-The pretrained model checkpoints can be reached at [🤗 Hugging Face](https://huggingface.co/SWivid/F5-TTS) and [🤖 Model Scope](https://www.modelscope.cn/models/SWivid/F5-TTS_Emilia-ZH-EN), or will be automatically downloaded when running inference scripts.
+There are two usage methods:
+1. Pass parameters directly in the command line
+2. Using external TOML (command line + `-c your.toml`)
 
-**More checkpoints with whole community efforts can be found in [SHARED.md](SHARED.md), supporting more languages.**
+Parameter Priority:
+1. Command line arguments
+2. TOML configuration (only when `-c` is passed)
+3. Code default values
 
-Currently support **30s for a single** generation, which is the **total length** (same logic if `fix_duration`) including both prompt and output audio. However, `infer_cli` and `infer_gradio` will automatically do chunk generation for longer text. Long reference audio will be **clip short to ~12s**.
+## Pure Command Line
 
-To avoid possible inference failures, make sure you have seen through the following instructions.
+Using only command line arguments + code default values, suitable for fast single-speaker inference.
 
-- Use reference audio <12s and leave proper silence space (e.g. 1s) at the end. Otherwise there is a risk of truncating in the middle of word, leading to suboptimal generation.
-- <ins>Uppercased letters</ins> (best with form like K.F.C.) will be uttered letter by letter, and lowercased letters used for common words. 
-- Add some spaces (blank: " ") or punctuations (e.g. "," ".") <ins>to explicitly introduce some pauses</ins>.
-- If English punctuation marks the end of a sentence, make sure there is a space " " after it. Otherwise not regarded as when chunk.
-- <ins>Preprocess numbers</ins> to Chinese letters if you want to have them read in Chinese, otherwise in English.
-- If the generation output is blank (pure silence), <ins>check for FFmpeg installation</ins>.
-- Try <ins>turn off `use_ema` if using an early-stage</ins> finetuned checkpoint (which goes just few updates).
+It is recommended to explicitly provide at least:
+1. `--ref_audio`: Speaker reference audio
+2. `--gen_text` or `--gen_file`: Target text (choose one)
+3. `--lang`: target language (or enable `--auto_detect_lang` then detect the language of the target text automatically)
+
+>[!NOTE]
+> - ``--gen_text`` format
+>   ```
+>   # Provide the string directly
+>   gen_text = "a sentence you want to speak"
+>   # Use language tags, e.g. [en], [zh]
+>   gen_text = "[lang1]sentence1. [lang2]sentence2"
+>   ```
+>  - Language reading order:
+>     1. First, the model will check if the language is explicitly specified in the segment tag of `gen_text`.
+>     2. If not specified and `--auto_detect_lang` is enabled, automatically detect it based on the text segment.
+>     3. If still undetermined, fall back to the global `--lang`. If this is also not provided, it defaults to `en`.
+>  - Automatic recognition and switching of multiple languages within the same sentence is currently not supported.
 
 
-## Gradio App
+### Other Options and Default Values
 
-Currently supported features:
+<details>
+<summary>Models and Checkpoints</summary>
 
-- Basic TTS with Chunk Inference
-- Multi-Style / Multi-Speaker Generation
-- Voice Chat powered by Qwen2.5-3B-Instruct
-- [Custom inference with more language support](SHARED.md)
+| Parameter | Description |
+| --- | --- |
+| `--model` | Model name, default `XVoice_v1_Base_Stage2` |
+| `--model_cfg` | Model configuration path, default `src/x_voice/configs/{model}.yaml` |
+| `--ckpt_file` | Main model weights path, default empty (download automatically) | 
+| `--srp_model_cfg` | Speaking rate predictor configuration path, default `src/srp/configs/SpeedPredict_Multilingual.yaml` |
+| `--srp_ckpt_file` | Speaking rate predictor weights path, default empty (download automatically) |
+| `--vocab_file` | Custom vocabulary path, default reads according to the ``--model_cfg`` configuration | 
 
-The cli command `f5-tts_infer-gradio` equals to `python src/f5_tts/infer/infer_gradio.py`, which launches a Gradio APP (web interface) for inference.
+</details>
 
-The script will load model checkpoints from Huggingface. You can also manually download files and update the path to `load_model()` in `infer_gradio.py`. Currently only load TTS models first, will load ASR model to do transcription if `ref_text` not provided, will load LLM model if use Voice Chat.
 
-More flags options:
+<details>
+<summary>Output Configuration</summary>
+
+| Parameter | Description |
+| --- | --- |
+| `--output_dir` | Output directory, default `tests/`  |
+| `--output_file` | Output filename, default `infer_cli_droptext_timestamp.wav` | 
+| `--vocoder_name` | Vocoder type, default `vocos` |
+| `--save_chunk` | Whether to save segmented audios, default `false` | 
+| `--remove_silence` | Whether to remove long silences from the audio, default `false` | 
+
+</details>
+
+<details>
+<summary>Sampling and Control</summary>
+
+| Parameter | Description & Default Value |
+| --- | --- |
+| `--cross_fade_duration` | Cross-fade duration for segment concatenation (seconds), default `0.15` | 
+| `--nfe_step` | Number of sampling steps, default `32` | 
+| `--cfg_strength` |  CFG strength, default `2.0`  |
+| `--sway_sampling_coef` | Sway Sampling coefficient, default `-1.0` | 
+| `--speed` | Global speaking rate multiplier (relative to reference audio), default `1.0` |
+| `--fix_duration` | Fixed total duration (seconds), default `None` |
+| `--layered` | Whether to enable layered CFG, default `false` | 
+| `--cfg_strength2` | Second strength for layered CFG, default `4.0` |
+| `--cfg_schedule` | CFG schedule (square/cosine/none), default `square` | 
+| `--cfg_decay_time` | CFG decay start time, default `0.6` | 
+
+</details>
+
+### Examples
+```bash
+python -m x_voice.infer.infer_cli_droptext \
+  --ref_audio "path/to/main.wav" \
+  --gen_text "今日はいい天気です。" \
+  --auto_detect_lang \
+  --output_dir tests \
+  --output_file cli_single_lang.wav
+```
+```bash
+python -m x_voice.infer.infer_cli_droptext \
+  --ref_audio "path/to/main.wav" \
+  --gen_text "[zh] 你好。[en] Hello there. [ja] 今日はいい天気です。" \
+  --output_dir tests \
+  --output_file cli_mix_lang.wav
+```
+
+## Using External TOML Configuration File
+
+Invocation method:
 
 ```bash
-# Automatically launch the interface in the default web browser
-f5-tts_infer-gradio --inbrowser
-
-# Set the root path of the application, if it's not served from the root ("/") of the domain
-# For example, if the application is served at "https://example.com/myapp"
-f5-tts_infer-gradio --root_path "/myapp"
+python -m x_voice.infer.infer_cli_droptext -c path/to/your_config.toml
 ```
 
-Could also be used as a component for larger application:
-```python
-import gradio as gr
-from f5_tts.infer.infer_gradio import app
+Suitable for complex parameter invocations, such as custom models, multi-speaker synthesis, etc.
 
-with gr.Blocks() as main_app:
-    gr.Markdown("# This is an example of using F5-TTS within a bigger Gradio app")
+### Multi-speaker Inference
 
-    # ... other Gradio components
+Multi-speaker inference additionally requires:
+1. Configure the speaker-to-audio-path mapping (`ref_audio`) under `[voices.<name>]`
+2. Use the corresponding speaker tag in the text (e.g., `[alice]`)
 
-    app.render()
+> [!NOTE] 
+>- Speaker priority:
+>   1. Explicitly specified by segment tags first (e.g., `[alice]`, `[alice|en]`)
+>   2. If not explicitly specified or the tag is invalid, fall back to `main`, i.e., the one specified in ``ref_audio``
+>- Language priority:
+>   1. Language explicitly stated in the segment tag (e.g., `[alice|en]`, `[en]`)
+>   2. Automatic detection (if `auto_detect_lang=true`)
+>   3. Specified in the global `lang`
 
-main_app.launch()
-```
-
-
-## CLI Inference
-
-The cli command `f5-tts_infer-cli` equals to `python src/f5_tts/infer/infer_cli.py`, which is a command line tool for inference.
-
-The script will load model checkpoints from Huggingface. You can also manually download files and use `--ckpt_file` to specify the model you want to load, or directly update in `infer_cli.py`.
-
-For change vocab.txt use `--vocab_file` to provide your `vocab.txt` file.
-
-Basically you can inference with flags:
-```bash
-# Leave --ref_text "" will have ASR model transcribe (extra GPU memory usage)
-f5-tts_infer-cli \
---model F5TTS_v1_Base \
---ref_audio "ref_audio.wav" \
---ref_text "The content, subtitle or transcription of reference audio." \
---gen_text "Some text you want TTS model generate for you."
-
-# Use BigVGAN as vocoder. Currently only support F5TTS_Base. 
-f5-tts_infer-cli --model F5TTS_Base --vocoder_name bigvgan --load_vocoder_from_local
-
-# Use custom path checkpoint, e.g.
-f5-tts_infer-cli --ckpt_file ckpts/F5TTS_v1_Base/model_1250000.safetensors
-
-# More instructions
-f5-tts_infer-cli --help
-```
-
-And a `.toml` file would help with more flexible usage.
-
-```bash
-f5-tts_infer-cli -c custom.toml
-```
-
-For example, you can use `.toml` to pass in variables, refer to `src/f5_tts/infer/examples/basic/basic.toml`:
+### TOML Example
 
 ```toml
-# F5TTS_v1_Base | E2TTS_Base
-model = "F5TTS_v1_Base"
-ref_audio = "infer/examples/basic/basic_ref_en.wav"
-# If an empty "", transcribes the reference audio automatically.
-ref_text = "Some call me nature, others call me mother nature."
-gen_text = "I don't really care what you call me. I've been a silent spectator, watching species evolve, empires rise and fall. But always remember, I am mighty and enduring."
-# File with text to generate. Ignores the text above.
+model = "XVoice_v1_Base_test"
+srp_model_cfg = "src/configs/SpeedPredict_Multilingual.yaml"
+ckpt_file = "ckpts/XVoice_v1_Base_test_ipa/model_70000.pt"
+srp_ckpt_file = "ckpts/SpeedPredictor_multilingual_ipa/model_28000.pt"
+
+ref_audio = "path/to/main.wav"
+auto_detect_lang = true
+
+gen_text = "[main] 这里是主说话人。 [alice|en] Hello, I am Alice. [bob] 今天天气真的好啊。 [ja] 今日はいい天気です。"
 gen_file = ""
-remove_silence = false
+
 output_dir = "tests"
+output_file = "toml_multi_voice.wav"
+
+[voices.alice]
+ref_audio = "path/to/alice.wav"
+speed = 1.00
+
+[voices.bob]
+ref_audio = "path/to/bob.wav"
+speed = 0.95
 ```
-
-You can also leverage `.toml` file to do multi-style generation, refer to `src/f5_tts/infer/examples/multi/story.toml`.
-
-```toml
-# F5TTS_v1_Base | E2TTS_Base
-model = "F5TTS_v1_Base"
-ref_audio = "infer/examples/multi/main.flac"
-# If an empty "", transcribes the reference audio automatically.
-ref_text = ""
-gen_text = ""
-# File with text to generate. Ignores the text above.
-gen_file = "infer/examples/multi/story.txt"
-remove_silence = true
-output_dir = "tests"
-
-[voices.town]
-ref_audio = "infer/examples/multi/town.flac"
-ref_text = ""
-
-[voices.country]
-ref_audio = "infer/examples/multi/country.flac"
-ref_text = ""
-```
-You should mark the voice with `[main]` `[town]` `[country]` whenever you want to change voice, refer to `src/f5_tts/infer/examples/multi/story.txt`.
-
-## API Usage
-
-```python
-from importlib.resources import files
-from f5_tts.api import F5TTS
-
-f5tts = F5TTS()
-wav, sr, spec = f5tts.infer(
-    ref_file=str(files("f5_tts").joinpath("infer/examples/basic/basic_ref_en.wav")),
-    ref_text="some call me nature, others call me mother nature.",
-    gen_text="""I don't really care what you call me. I've been a silent spectator, watching species evolve, empires rise and fall. But always remember, I am mighty and enduring. Respect me and I'll nurture you; ignore me and you shall face the consequences.""",
-    file_wave=str(files("f5_tts").joinpath("../../tests/api_out.wav")),
-    file_spec=str(files("f5_tts").joinpath("../../tests/api_out.png")),
-    seed=None,
-)
-```
-Check [api.py](../api.py) for more details.
-
-## TensorRT-LLM Deployment
-
-See [detailed instructions](../runtime/triton_trtllm/README.md) for more information.
-
-## Socket Real-time Service
-
-Real-time voice output with chunk stream:
-
-```bash
-# Start socket server
-python src/f5_tts/socket_server.py
-
-# If PyAudio not installed
-sudo apt-get install portaudio19-dev
-pip install pyaudio
-
-# Communicate with socket client
-python src/f5_tts/socket_client.py
-```
-
-## Speech Editing
-
-To test speech editing capabilities, use the following command:
-
-```bash
-python src/f5_tts/infer/speech_edit.py
-```
-
