@@ -19,12 +19,9 @@ from omegaconf import OmegaConf
 from unidecode import unidecode
 
 try:
-    from langdetect import DetectorFactory, LangDetectException, detect
-
-    DetectorFactory.seed = 0
+    from fastlid import fastlid
 except ImportError:
-    LangDetectException = Exception
-    detect = None
+    fastlid = None
 
 from x_voice.infer.module_clf5 import SpeedPredictor
 from x_voice.infer.utils_infer import (
@@ -101,9 +98,9 @@ def parse_voice_lang_tag(tag_content, voice_names=None, default_voice="main"):
 def detect_segment_lang(gen_text, fallback_lang):
     global _LANGDETECT_WARNED
 
-    if detect is None:
+    if fastlid is None:
         if not _LANGDETECT_WARNED:
-            print("Warning: langdetect is not installed, automatic segment language detection is disabled.")
+            print("Warning: fastlid is not installed, automatic segment language detection is disabled.")
             _LANGDETECT_WARNED = True
         return fallback_lang
 
@@ -112,8 +109,9 @@ def detect_segment_lang(gen_text, fallback_lang):
         return fallback_lang
 
     try:
-        detected_lang = normalize_lang_code(detect(text))
-    except LangDetectException:
+        detected_lang = normalize_lang_code(fastlid(text)[0])
+    except Exception as e:
+        print(f"Error occurred while detecting language for text '{text}': {e}")
         return fallback_lang
 
     return detected_lang or fallback_lang
