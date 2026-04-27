@@ -347,6 +347,9 @@ with gr.Blocks() as app:
         lines=3,
         placeholder="Optional for Stage1. Leave empty to transcribe with Whisper.",
     )
+    gen_text_input = gr.Textbox(label="Text to Generate", lines=8)
+    generate_btn = gr.Button("Synthesize", variant="primary")
+    audio_output = gr.Audio(label="Generated Audio")
     gr.Examples(
         examples=[
             [EXAMPLE_REF_EN, "Some call me nature, others call me mother nature"],
@@ -355,9 +358,6 @@ with gr.Blocks() as app:
         inputs=[ref_audio_input, ref_text_input],
         label="Example Prompts",
     )
-    gen_text_input = gr.Textbox(label="Text to Generate", lines=8)
-    generate_btn = gr.Button("Synthesize", variant="primary")
-    audio_output = gr.Audio(label="Generated Audio")
 
     choose_model.change(
         switch_model,
