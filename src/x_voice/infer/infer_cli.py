@@ -156,9 +156,9 @@ fix_duration = args.fix_duration or config.get("fix_duration", fix_duration)
 device = args.device or config.get("device", device)
 ref_lang = normalize_lang_code(args.ref_lang or config.get("ref_lang"))
 gen_lang = normalize_lang_code(args.gen_lang or config.get("gen_lang"))
-if not ref_lang:
+if not auto_detect_lang and not ref_lang:
     raise ValueError("ref_lang is required in config or CLI.")
-if not gen_lang:
+if not auto_detect_lang and not gen_lang:
     raise ValueError("gen_lang is required in config or CLI.")
 sp_type = args.sp_type or config.get("sp_type", "syllable")
 srp_ckpt_file = args.srp_ckpt_file or config.get("srp_ckpt_file", "")

@@ -157,7 +157,7 @@ speed = args.speed or config.get("speed", speed)
 fix_duration = args.fix_duration or config.get("fix_duration", fix_duration)
 device = args.device or config.get("device", device)
 gen_lang = normalize_lang_code(args.gen_lang or config.get("gen_lang"))
-if not gen_lang:
+if not auto_detect_lang and not gen_lang:
     raise ValueError("gen_lang is required in config or CLI.")
 
 if ref_text:
