@@ -1,10 +1,9 @@
 # Basic X-Voice inference config.
-# Provide ckpt_file explicitly, or set ckpt_step when the checkpoint exists under ckpts/.
+# Update ckpt_file to the actual Stage1 checkpoint path before running.
 
 model = "XVoice_v1_Base_Stage1"
 model_cfg = ""
-ckpt_file = ""
-# ckpt_step = 5000
+ckpt_file = "ckpts/XVoice_v1_Base_Stage1_vocos_ipa_v6_multilingual_stage1/model_600000.pt"
 vocab_file = ""
 
 ref_audio = "infer/examples/basic/basic_ref_en.wav"
