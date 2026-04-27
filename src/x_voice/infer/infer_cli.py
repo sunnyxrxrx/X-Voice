@@ -42,7 +42,7 @@ from x_voice.infer.utils_infer import (
 )
 
 
-DEFAULT_MODEL = "XVoice_v1_Base_Stage2"
+DEFAULT_MODEL = "XVoice_v1_Base_Stage1"
 DEFAULT_SRP_CFG = str(files("srp").joinpath("configs/SpeedPredict_Multilingual.yaml"))
 
 
