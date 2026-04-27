@@ -3,7 +3,7 @@
 
 model = "XVoice_Base_Stage1"
 model_cfg = ""
-ckpt_file = "ckpts/stage1_model_500000.safetensors"
+ckpt_file = "ckpts/stage1_model_500000.safetensors1"
 vocab_file = ""
 
 ref_audio = "infer/examples/basic/basic_ref_en.wav"
