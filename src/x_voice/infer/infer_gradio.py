@@ -339,6 +339,8 @@ with gr.Blocks() as app:
 # X-Voice Online Demo
 
 Clone a reference voice and generate natural speech from text in any of 30 supported languages.
+
+Stage 1 requires the reference voice to be in one of the 30 supported languages, while Stage 2 can use a reference voice in any language.
 """
     )
 
