@@ -7,3 +7,4 @@ runs/
 *.safetensors
 my_vocoder
 tests/
+.gradio/
