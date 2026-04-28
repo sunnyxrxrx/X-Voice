@@ -951,6 +951,13 @@ def count_units(text, lang):
     return max(units, 1)
 
 
+def count_lang_spans_units(spans):
+    return max(
+        sum(count_units(span_text, lang) for lang, span_text in spans if span_text),
+        1,
+    )
+
+
 def chunk_text_by_units(text, lang, max_units):
     chunks = []
     current_chunk = ""
@@ -1158,8 +1165,9 @@ def infer_xvoice_process(
     ref_lang_id = lang_to_id(ref_lang, lang_to_id_map)
 
     for batch_text, batch_spans, dominant_lang in all_batches:
+        batch_units = count_lang_spans_units(batch_spans)
         local_batch_speed = local_speed
-        if count_units(batch_text, dominant_lang) < 4:
+        if batch_units < 4:
             local_batch_speed = min(local_batch_speed, 0.5)
 
         gen_tokens, gen_lang_ids = prepare_codeswitch_text_tokens_and_lang_ids(
@@ -1174,17 +1182,20 @@ def infer_xvoice_process(
         language_ids_list.append([ref_lang_id] * len(ref_tokens) + gen_lang_ids)
         time_language_ids_list.append(dominant_lang_id)
 
-        duration = estimate_duration(
-            ref_audio_len,
-            ref_text,
-            batch_text,
-            ref_lang,
-            dominant_lang,
-            sp_type,
-            local_batch_speed,
-            fix_duration_value,
-            predicted_speed,
-        )
+        if fix_duration_value is not None:
+            duration = int(fix_duration_value * target_sample_rate / hop_length)
+        elif sp_type == "pretrained":
+            if predicted_speed is None:
+                raise ValueError("sp_type='pretrained' requires srp_ckpt_file and a loaded SRP model.")
+            gen_seconds = batch_units / max(predicted_speed, 0.1) / local_batch_speed
+            duration = ref_audio_len + int(gen_seconds * target_sample_rate / hop_length)
+        elif sp_type == "syllable":
+            ref_units = count_units(ref_text, ref_lang)
+            duration = ref_audio_len + int(ref_audio_len / ref_units * batch_units / local_batch_speed)
+        else:
+            ref_text_len = max(len(ref_text.encode("utf-8")), 1)
+            gen_text_len = max(len(batch_text.encode("utf-8")), 1)
+            duration = ref_audio_len + int(ref_audio_len / ref_text_len * gen_text_len / local_batch_speed)
         durations.append(duration)
 
     B = len(all_batches)
@@ -1374,8 +1385,9 @@ def infer_xvoice_droptext_process(
     durations = []
     
     for batch_text, batch_spans, dominant_lang in all_batches:
+        batch_units = count_lang_spans_units(batch_spans)
         local_batch_speed = local_speed
-        if count_units(batch_text, dominant_lang) < 4:
+        if batch_units < 4:
             local_batch_speed = min(local_batch_speed, 0.5)
 
         gen_tokens, gen_lang_ids = prepare_codeswitch_text_tokens_and_lang_ids(
@@ -1393,7 +1405,7 @@ def infer_xvoice_droptext_process(
         if fix_duration_value is not None:
             duration = int(fix_duration_value * target_sample_rate / hop_length)
         else:
-            gen_seconds = max(1.0, count_units(batch_text, dominant_lang) / max(predicted_speed, 0.1) / local_batch_speed)
+            gen_seconds = max(1.0, batch_units / max(predicted_speed, 0.1) / local_batch_speed)
             duration = ref_audio_len + int(gen_seconds * target_sample_rate / hop_length)
         durations.append(duration)
 
