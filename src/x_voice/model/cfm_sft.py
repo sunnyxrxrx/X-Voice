@@ -111,6 +111,7 @@ class CFM_SFT(nn.Module):
         t_inter=0.1,
         edit_mask=None,
         language_ids:  list[str] | torch.Tensor | None = None, 
+        time_language_ids: torch.Tensor | None = None,
         cfg_schedule=None,
         cfg_decay_time=0.0, # for cfg_schedule
         reverse=False,
@@ -177,7 +178,6 @@ class CFM_SFT(nn.Module):
                 prefix_token_id=prefix_token_id,
                 anchor_token_ids=anchor_token_ids,
             )
-            time_language_ids = None
             if language_ids.dim() == 2:
                 language_ids = build_prefixed_language_ids_tokenwise(
                     text=base_text,
@@ -188,7 +188,8 @@ class CFM_SFT(nn.Module):
                     unknown_lang_id=self.transformer.num_languages,
                 )
             else:
-                time_language_ids = language_ids.clone()
+                if time_language_ids is None:
+                    time_language_ids = language_ids.clone()
                 language_ids = build_prefixed_language_ids(
                     text=base_text,
                     total_lens=duration,

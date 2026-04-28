@@ -105,6 +105,7 @@ class CFM(nn.Module):
         t_inter=0.1,
         edit_mask=None,
         language_ids:  list[str] | torch.Tensor | None = None, 
+        time_language_ids: torch.Tensor | None = None,
         cfg_schedule=None,
         cfg_decay_time=0.0, # for cfg_schedule
         reverse=False,
@@ -221,6 +222,7 @@ class CFM(nn.Module):
                     drop_lang=False,
                     cache=True,
                     language_ids=language_ids,
+                    time_language_ids=time_language_ids,
                     infer_mode=infer_mode,
                 )
                 return pred
@@ -235,6 +237,7 @@ class CFM(nn.Module):
                 cfg_infer=True,
                 cache=True,
                 language_ids=language_ids,
+                time_language_ids=time_language_ids,
                 layered=layered,
                 infer_mode=infer_mode,
             )

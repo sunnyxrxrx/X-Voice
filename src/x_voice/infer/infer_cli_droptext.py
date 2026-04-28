@@ -294,38 +294,11 @@ def main():
     reg1 = r"(?=\[[^\[\]]+\])"
     reg2 = r"^\[([^\[\]]+)\]"
     
-    # Auto code-switch preprocessing
-    if auto_detect_lang:
-        from x_voice.infer.utils_infer import auto_split_mixed_text
-        new_gen_text = ""
-        for chunk in re.split(reg1, gen_text):
-            if not chunk.strip():
-                continue
-            match = re.match(reg2, chunk)
-            tag = match.group(0) if match else ""
-            content = chunk[len(tag):] if match else chunk
-            
-            voice = "main"
-            segment_gen_lang = None
-            if match:
-                voice, segment_gen_lang = parse_voice_lang_tag(match.group(1), voice_names=voices.keys())
-            
-            # If the user explicitly provided a language tag (e.g., [alice|en]), respect it and don't auto-split
-            if segment_gen_lang:
-                new_gen_text += f"[{voice}|{segment_gen_lang}]{content}"
-            else:
-                # Use the specified lang as fallback, or the global gen_lang
-                fallback = normalize_lang_code(voices.get(voice, {}).get("gen_lang", gen_lang))
-                split_content = auto_split_mixed_text(content, fallback)
-                
-                for lang, text in split_content:
-                    new_gen_text += f"[{voice}|{lang}]{text}"
-                
-        gen_text = new_gen_text
     chunks = re.split(reg1, gen_text)
 
     # collect all chunks' information
     segments_info = []
+    from x_voice.infer.utils_infer import auto_split_mixed_text
     
     for text in chunks:
         if not text.strip():
@@ -347,22 +320,34 @@ def main():
         if not gen_text_:
             continue
 
-        if segment_gen_lang is None:
-            if auto_detect_lang:
-                segment_gen_lang = detect_segment_lang(gen_text_, segment_gen_lang)
-        if segment_gen_lang is None:
-            segment_gen_lang = normalize_lang_code(voices[voice].get("gen_lang", gen_lang))
-        if segment_gen_lang is None:
-            raise ValueError(f"gen_lang is required for voice '{voice}'.")
+        if segment_gen_lang:
+            spans = [(segment_gen_lang, gen_text_)]
+        elif auto_detect_lang:
+            fallback = normalize_lang_code(voices[voice].get("gen_lang", gen_lang))
+            spans = auto_split_mixed_text(gen_text_, fallback)
+        else:
+            fallback = normalize_lang_code(voices[voice].get("gen_lang", gen_lang))
+            if fallback is None:
+                raise ValueError(f"gen_lang is required for voice '{voice}'.")
+            spans = [(fallback, gen_text_)]
 
         if normalize_text:
-            gen_text_ = normalize_text_for_lang(gen_text_, segment_gen_lang, normalizer_cache)
+            spans = [
+                (span_lang, normalize_text_for_lang(span_text, span_lang, normalizer_cache))
+                for span_lang, span_text in spans
+            ]
 
-        segments_info.append({
-            "voice": voice,
-            "text": gen_text_,
-            "lang": segment_gen_lang
-        })
+        gen_text_ = "".join(span_text for _, span_text in spans)
+
+        if segments_info and segments_info[-1]["voice"] == voice:
+            segments_info[-1]["text"] += gen_text_
+            segments_info[-1]["lang"].extend(spans)
+        else:
+            segments_info.append({
+                "voice": voice,
+                "text": gen_text_,
+                "lang": spans,
+            })
 
     # Grouped aggregation and reasoning by speaker
     voice_to_segments = {}

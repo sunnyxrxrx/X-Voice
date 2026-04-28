@@ -796,6 +796,58 @@ def auto_split_mixed_text(text: str, fallback_lang: str) -> list[tuple[str, str]
     return result
 
 
+def spans_to_text(spans):
+    if isinstance(spans, str):
+        return spans
+    return "".join(text for _, text in spans)
+
+
+def normalize_text_lang_spans(text, lang_spec, fallback_lang):
+    if isinstance(lang_spec, list):
+        return [(normalize_lang_code(lang) or fallback_lang, span_text) for lang, span_text in lang_spec if span_text]
+    return [(normalize_lang_code(lang_spec) or fallback_lang, text)]
+
+
+def slice_lang_spans(spans, start, end):
+    sliced = []
+    cursor = 0
+    for lang, span_text in spans:
+        span_start = cursor
+        span_end = cursor + len(span_text)
+        cursor = span_end
+        overlap_start = max(start, span_start)
+        overlap_end = min(end, span_end)
+        if overlap_start < overlap_end:
+            sliced.append((lang, span_text[overlap_start - span_start : overlap_end - span_start]))
+    return sliced
+
+
+def split_lang_spans_by_chunks(spans, chunks):
+    full_text = spans_to_text(spans)
+    chunk_spans = []
+    cursor = 0
+    for chunk in chunks:
+        start = full_text.find(chunk, cursor)
+        if start < 0:
+            start = cursor
+        end = start + len(chunk)
+        chunk_spans.append(slice_lang_spans(spans, start, end))
+        cursor = end
+    return chunk_spans
+
+
+def prepare_codeswitch_text_tokens_and_lang_ids(spans, tokenizer_name, ipa_tokenizer_getter, lang_to_id_map):
+    tokens = []
+    lang_ids = []
+    for lang, span_text in spans:
+        if not span_text:
+            continue
+        span_tokens = prepare_text_tokens(span_text, tokenizer_name, lang, ipa_tokenizer_getter)
+        tokens.extend(span_tokens)
+        lang_ids.extend([lang_to_id(lang, lang_to_id_map)] * len(span_tokens))
+    return tokens, lang_ids
+
+
 def resolve_package_example(path):
     if path and "infer/examples/" in path:
         return str(files("x_voice").joinpath(path))
@@ -1061,7 +1113,11 @@ def infer_xvoice_process(
     predicted_speed = predict_ref_speed(srp_model, audio)
 
     all_batches = []
+    item_chunk_counts = []
     for text, lang in zip(gen_text, gen_lang):
+        spans = normalize_text_lang_spans(text, lang, normalize_lang_code(lang[0][0]) if isinstance(lang, list) and lang else None)
+        full_text = spans_to_text(spans)
+        dominant_lang = detect_segment_lang(full_text, spans[0][0] if spans else None)
         if sp_type in {"syllable", "pretrained"}:
             if sp_type == "pretrained" and predicted_speed:
                 max_units = max(int(predicted_speed * remaining_seconds * local_speed), 1)
@@ -1070,13 +1126,16 @@ def infer_xvoice_process(
                     int(count_units(ref_text, ref_lang) / ref_seconds * remaining_seconds * local_speed),
                     1,
                 )
-            gen_text_batches = chunk_text_by_units(text, lang, max_units)
+            gen_text_batches = chunk_text_by_units(full_text, dominant_lang, max_units)
         else:
             max_chars = int(len(ref_text.encode("utf-8")) / ref_seconds * remaining_seconds * local_speed)
-            gen_text_batches = chunk_text_by_chars(text, max_chars=max(max_chars, 1))
-        
-        for batch_text in gen_text_batches:
-            all_batches.append((batch_text, lang))
+            gen_text_batches = chunk_text_by_chars(full_text, max_chars=max(max_chars, 1))
+
+        chunk_spans = split_lang_spans_by_chunks(spans, gen_text_batches)
+        item_chunk_counts.append(len(chunk_spans))
+        for batch_text, batch_spans in zip(gen_text_batches, chunk_spans):
+            batch_dominant_lang = detect_segment_lang(batch_text, dominant_lang)
+            all_batches.append((batch_text, batch_spans, batch_dominant_lang))
 
     print(f"\nGenerating audio in {len(all_batches)} chunks...")
     
@@ -1086,28 +1145,35 @@ def infer_xvoice_process(
     # Construct batch inputs
     final_text_list = []
     language_ids_list = []
+    time_language_ids_list = []
     durations = []
     
     ref_tokens = prepare_text_tokens(ref_text, tokenizer_name, ref_lang, ipa_tokenizer_getter)
     ref_lang_id = lang_to_id(ref_lang, lang_to_id_map)
 
-    for batch_text, lang in all_batches:
+    for batch_text, batch_spans, dominant_lang in all_batches:
         local_batch_speed = local_speed
-        if count_units(batch_text, lang) < 4:
+        if count_units(batch_text, dominant_lang) < 4:
             local_batch_speed = min(local_batch_speed, 0.5)
 
-        gen_tokens = prepare_text_tokens(batch_text, tokenizer_name, lang, ipa_tokenizer_getter)
+        gen_tokens, gen_lang_ids = prepare_codeswitch_text_tokens_and_lang_ids(
+            batch_spans,
+            tokenizer_name,
+            ipa_tokenizer_getter,
+            lang_to_id_map,
+        )
         final_text_list.append(ref_tokens + gen_tokens)
         
-        gen_lang_id = lang_to_id(lang, lang_to_id_map)
-        language_ids_list.append([ref_lang_id] * len(ref_tokens) + [gen_lang_id] * len(gen_tokens))
+        dominant_lang_id = lang_to_id(dominant_lang, lang_to_id_map)
+        language_ids_list.append([ref_lang_id] * len(ref_tokens) + gen_lang_ids)
+        time_language_ids_list.append(dominant_lang_id)
 
         duration = estimate_duration(
             ref_audio_len,
             ref_text,
             batch_text,
             ref_lang,
-            lang,
+            dominant_lang,
             sp_type,
             local_batch_speed,
             fix_duration_value,
@@ -1125,8 +1191,9 @@ def infer_xvoice_process(
     # In CFM sample, language_ids can be [b, nt]. We need to pad it to max_seq_len.
     # We can use torch.nn.utils.rnn.pad_sequence
     max_len = max(len(ids) for ids in language_ids_list)
-    padded_lang_ids = [ids + [lang_to_id_map.get("unk", 0)] * (max_len - len(ids)) for ids in language_ids_list]
+    padded_lang_ids = [ids + [-1] * (max_len - len(ids)) for ids in language_ids_list]
     language_ids_tensor = torch.tensor(padded_lang_ids, dtype=torch.long, device=device_name)
+    time_language_ids_tensor = torch.tensor(time_language_ids_list, dtype=torch.long, device=device_name)
 
     with torch.inference_mode():
         generated, _ = model_obj.sample(
@@ -1137,6 +1204,7 @@ def infer_xvoice_process(
             cfg_strength=cfg_strength_value,
             sway_sampling_coef=sway_sampling_coef_value,
             language_ids=language_ids_tensor,
+            time_language_ids=time_language_ids_tensor,
             cfg_schedule=cfg_schedule_value,
             cfg_decay_time=cfg_decay_time_value,
             reverse=reverse,
@@ -1182,21 +1250,8 @@ def infer_xvoice_process(
     # Group generated_waves back to original gen_text items
     waves_by_original = [[] for _ in range(len(gen_text))]
     chunk_idx = 0
-    for text_idx, (text, lang) in enumerate(zip(gen_text, gen_lang)):
-        if sp_type in {"syllable", "pretrained"}:
-            if sp_type == "pretrained" and predicted_speed:
-                max_units = max(int(predicted_speed * remaining_seconds * local_speed), 1)
-            else:
-                max_units = max(
-                    int(count_units(ref_text, ref_lang) / ref_seconds * remaining_seconds * local_speed),
-                    1,
-                )
-            gen_text_batches = chunk_text_by_units(text, lang, max_units)
-        else:
-            max_chars = int(len(ref_text.encode("utf-8")) / ref_seconds * remaining_seconds * local_speed)
-            gen_text_batches = chunk_text_by_chars(text, max_chars=max(max_chars, 1))
-            
-        for _ in gen_text_batches:
+    for text_idx, chunk_count in enumerate(item_chunk_counts):
+        for _ in range(chunk_count):
             waves_by_original[text_idx].append(generated_waves[chunk_idx])
             chunk_idx += 1
 
@@ -1282,11 +1337,18 @@ def infer_xvoice_droptext_process(
         raise ValueError("drop-text inference requires SRP speed prediction.")
 
     all_batches = []
+    item_chunk_counts = []
     for text, lang in zip(gen_text, gen_lang):
+        spans = normalize_text_lang_spans(text, lang, normalize_lang_code(lang[0][0]) if isinstance(lang, list) and lang else None)
+        full_text = spans_to_text(spans)
+        dominant_lang = detect_segment_lang(full_text, spans[0][0] if spans else None)
         max_units = max(int(predicted_speed * remaining_seconds * local_speed), 1)
-        gen_text_batches = chunk_text_by_units(text, lang, max_units)
-        for batch_text in gen_text_batches:
-            all_batches.append((batch_text, lang))
+        gen_text_batches = chunk_text_by_units(full_text, dominant_lang, max_units)
+        chunk_spans = split_lang_spans_by_chunks(spans, gen_text_batches)
+        item_chunk_counts.append(len(chunk_spans))
+        for batch_text, batch_spans in zip(gen_text_batches, chunk_spans):
+            batch_dominant_lang = detect_segment_lang(batch_text, dominant_lang)
+            all_batches.append((batch_text, batch_spans, batch_dominant_lang))
 
     print(f"\nGenerating audio in {len(all_batches)} chunks...")
     
@@ -1296,23 +1358,30 @@ def infer_xvoice_droptext_process(
     # Construct batch inputs
     final_text_list = []
     language_ids_list = []
+    time_language_ids_list = []
     durations = []
     
-    for batch_text, lang in all_batches:
+    for batch_text, batch_spans, dominant_lang in all_batches:
         local_batch_speed = local_speed
-        if count_units(batch_text, lang) < 4:
+        if count_units(batch_text, dominant_lang) < 4:
             local_batch_speed = min(local_batch_speed, 0.5)
 
-        gen_tokens = prepare_text_tokens(batch_text, tokenizer_name, lang, ipa_tokenizer_getter)
+        gen_tokens, gen_lang_ids = prepare_codeswitch_text_tokens_and_lang_ids(
+            batch_spans,
+            tokenizer_name,
+            ipa_tokenizer_getter,
+            lang_to_id_map,
+        )
         final_text_list.append(gen_tokens)
         
-        gen_lang_id = lang_to_id(lang, lang_to_id_map)
-        language_ids_list.append(gen_lang_id)
+        dominant_lang_id = lang_to_id(dominant_lang, lang_to_id_map)
+        language_ids_list.append(gen_lang_ids)
+        time_language_ids_list.append(dominant_lang_id)
 
         if fix_duration_value is not None:
             duration = int(fix_duration_value * target_sample_rate / hop_length)
         else:
-            gen_seconds = max(1.0, count_units(batch_text, lang) / max(predicted_speed, 0.1) / local_batch_speed)
+            gen_seconds = max(1.0, count_units(batch_text, dominant_lang) / max(predicted_speed, 0.1) / local_batch_speed)
             duration = ref_audio_len + int(gen_seconds * target_sample_rate / hop_length)
         durations.append(duration)
 
@@ -1321,7 +1390,10 @@ def infer_xvoice_droptext_process(
     cond_batch = audio.expand(B, -1)
 
     duration_tensor = torch.tensor(durations, dtype=torch.long, device=device_name)
-    language_ids_tensor = torch.tensor(language_ids_list, dtype=torch.long, device=device_name)
+    max_len = max(len(ids) for ids in language_ids_list)
+    padded_lang_ids = [ids + [-1] * (max_len - len(ids)) for ids in language_ids_list]
+    language_ids_tensor = torch.tensor(padded_lang_ids, dtype=torch.long, device=device_name)
+    time_language_ids_tensor = torch.tensor(time_language_ids_list, dtype=torch.long, device=device_name)
 
     with torch.inference_mode():
         generated, _ = model_obj.sample(
@@ -1332,6 +1404,7 @@ def infer_xvoice_droptext_process(
             cfg_strength=cfg_strength_value,
             sway_sampling_coef=sway_sampling_coef_value,
             language_ids=language_ids_tensor,
+            time_language_ids=time_language_ids_tensor,
             cfg_schedule=cfg_schedule_value,
             cfg_decay_time=cfg_decay_time_value,
             reverse=reverse,
@@ -1392,10 +1465,8 @@ def infer_xvoice_droptext_process(
     # Group generated_waves back to original gen_text items
     waves_by_original = [[] for _ in range(len(gen_text))]
     chunk_idx = 0
-    for text_idx, (text, lang) in enumerate(zip(gen_text, gen_lang)):
-        max_units = max(int(predicted_speed * remaining_seconds * local_speed), 1)
-        gen_text_batches = chunk_text_by_units(text, lang, max_units)
-        for _ in gen_text_batches:
+    for text_idx, chunk_count in enumerate(item_chunk_counts):
+        for _ in range(chunk_count):
             waves_by_original[text_idx].append(generated_waves[chunk_idx])
             chunk_idx += 1
 
