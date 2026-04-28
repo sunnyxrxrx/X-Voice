@@ -1,5 +1,6 @@
 import argparse
 import logging
+import re
 import warnings
 from functools import lru_cache
 from importlib.resources import files
@@ -75,6 +76,8 @@ def gpu_decorator(func):
 STAGE1_MODEL = "X-Voice Stage1"
 STAGE2_MODEL = "X-Voice Stage2"
 STAGE2_REF_TEXT = "X-Voice Stage2 does not need reference text."
+TEXT_MODE_AUTO = "Auto Detect"
+TEXT_MODE_CODESWITCH = "Manual Code-Switch"
 
 HF_REPO_ID = "XRXRX/X-Voice"
 STAGE1_CKPT = "XVoice_Base_Stage1/model_600000.safetensors"
@@ -104,6 +107,46 @@ NORMALIZE_TEXT = True
 DENOISE_REF = True
 LOUDNESS_NORM = True
 POST_PROCESSING = True
+MAX_CODE_SWITCH_SEGMENTS = 10
+LANGUAGE_OPTIONS = [
+    ("Bulgarian", "bg"),
+    ("Czech", "cs"),
+    ("Danish", "da"),
+    ("German", "de"),
+    ("Greek", "el"),
+    ("English", "en"),
+    ("Spanish", "es"),
+    ("Estonian", "et"),
+    ("Finnish", "fi"),
+    ("French", "fr"),
+    ("Croatian", "hr"),
+    ("Hungarian", "hu"),
+    ("Indonesian", "id"),
+    ("Italian", "it"),
+    ("Japanese", "ja"),
+    ("Korean", "ko"),
+    ("Lithuanian", "lt"),
+    ("Latvian", "lv"),
+    ("Maltese", "mt"),
+    ("Dutch", "nl"),
+    ("Polish", "pl"),
+    ("Portuguese", "pt"),
+    ("Romanian", "ro"),
+    ("Russian", "ru"),
+    ("Slovak", "sk"),
+    ("Slovenian", "sl"),
+    ("Swedish", "sv"),
+    ("Thai", "th"),
+    ("Vietnamese", "vi"),
+    ("Mandarin", "zh"),
+]
+LANGUAGE_CHOICES = [f"{name}({code})" for name, code in LANGUAGE_OPTIONS]
+LANGUAGE_CODES = {code for _, code in LANGUAGE_OPTIONS}
+CODE_SWITCH_SAMPLE = [
+    ("English(en)", "I was planning to go out for dinner, but"),
+    ("Mandarin(zh)", "外面好像快下雨了."),
+    ("English(en)", "Maybe I’ll just stay home and order something."),
+]
 
 
 vocoder = None
@@ -225,6 +268,45 @@ def build_gen_text_spans(gen_text):
     return full_text, spans, display_lang
 
 
+def parse_language_choice(language_choice):
+    value = (language_choice or "").strip()
+    match = re.fullmatch(r".*\(([a-z]{2})\)", value)
+    lang = match.group(1) if match else value.lower()
+    lang = normalize_lang_code(lang)
+    if lang not in LANGUAGE_CODES:
+        raise ValueError(f"Unsupported language '{value}'. Please use one of the 30 supported language codes.")
+    return lang
+
+
+def build_manual_gen_text_spans(segment_values):
+    spans = []
+    for idx in range(0, len(segment_values), 2):
+        language_choice = segment_values[idx]
+        segment_text = segment_values[idx + 1]
+        if not segment_text or not segment_text.strip():
+            continue
+        lang = parse_language_choice(language_choice)
+        text = segment_text.strip()
+        if NORMALIZE_TEXT:
+            text = normalize_text_for_lang(text, lang, normalizer_cache)
+        spans.append((lang, text))
+
+    if not spans:
+        raise ValueError("Please enter at least one code-switch segment.")
+
+    full_text = "".join(span_text for _, span_text in spans)
+    display_lang = detect_segment_lang(full_text, spans[0][0])
+    if not display_lang:
+        raise ValueError("Failed to detect generated text language. Please check fastlid installation and input text.")
+    return full_text, spans, display_lang
+
+
+def build_gen_text_from_mode(text_mode, gen_text, segment_values):
+    if text_mode == TEXT_MODE_CODESWITCH:
+        return build_manual_gen_text_spans(segment_values)
+    return build_gen_text_spans(gen_text)
+
+
 def preprocess_stage1_ref(ref_audio, ref_text, show_info=gr.Info):
     processed_audio, processed_text = preprocess_ref_audio_text(ref_audio, ref_text.strip(), show_info=show_info)
     ref_lang = detect_required_lang(processed_text, "reference text")
@@ -240,12 +322,12 @@ def preprocess_stage2_ref(ref_audio, show_info=gr.Info):
 
 @lru_cache(maxsize=1000)
 @gpu_decorator
-def infer(ref_audio, ref_text, gen_text, model_choice, show_info=gr.Info):
+def infer(ref_audio, ref_text, text_mode, gen_text, model_choice, *segment_values, show_info=gr.Info):
     if not ref_audio:
         gr.Warning("Please provide reference audio.")
         return gr.update(), ref_text
 
-    if not gen_text or not gen_text.strip():
+    if text_mode != TEXT_MODE_CODESWITCH and (not gen_text or not gen_text.strip()):
         gr.Warning("Please enter text to generate.")
         return gr.update(), ref_text
 
@@ -256,7 +338,7 @@ def infer(ref_audio, ref_text, gen_text, model_choice, show_info=gr.Info):
         if model_choice == STAGE1_MODEL:
             runtime = get_stage1_runtime(show_info=show_info)
             ref_audio, ref_text, ref_lang = preprocess_stage1_ref(ref_audio, ref_text, show_info=show_info)
-            gen_text, gen_lang_spans, display_gen_lang = build_gen_text_spans(gen_text)
+            gen_text, gen_lang_spans, display_gen_lang = build_gen_text_from_mode(text_mode, gen_text, segment_values)
 
             show_info(f"Detected languages: ref={ref_lang}, gen={display_gen_lang}")
             final_wave, final_sample_rate, _ = infer_xvoice_process(
@@ -295,7 +377,7 @@ def infer(ref_audio, ref_text, gen_text, model_choice, show_info=gr.Info):
         runtime = get_stage2_runtime(show_info=show_info)
         duration_model = get_srp_model(show_info=show_info)
         ref_audio = preprocess_stage2_ref(ref_audio, show_info=show_info)
-        gen_text, gen_lang_spans, display_gen_lang = build_gen_text_spans(gen_text)
+        gen_text, gen_lang_spans, display_gen_lang = build_gen_text_from_mode(text_mode, gen_text, segment_values)
 
         show_info(f"Detected language: gen={display_gen_lang}")
         final_wave, final_sample_rate, _ = infer_xvoice_droptext_process(
@@ -346,6 +428,35 @@ def switch_model(model_choice, current_ref_text):
     )
 
 
+def switch_text_mode(text_mode):
+    return (
+        gr.update(visible=text_mode == TEXT_MODE_AUTO),
+        gr.update(visible=text_mode == TEXT_MODE_CODESWITCH),
+    )
+
+
+def add_code_switch_segment(current_count):
+    new_count = min(int(current_count) + 1, MAX_CODE_SWITCH_SEGMENTS)
+    return [new_count] + [
+        gr.update(visible=idx < new_count)
+        for idx in range(MAX_CODE_SWITCH_SEGMENTS)
+    ]
+
+
+def load_code_switch_sample():
+    updates = [3]
+    updates.extend(
+        gr.update(visible=idx < 3)
+        for idx in range(MAX_CODE_SWITCH_SEGMENTS)
+    )
+    for idx in range(MAX_CODE_SWITCH_SEGMENTS):
+        if idx < len(CODE_SWITCH_SAMPLE):
+            updates.extend(CODE_SWITCH_SAMPLE[idx])
+        else:
+            updates.extend(("English(en)", ""))
+    return updates
+
+
 with gr.Blocks() as app:
     gr.Markdown(
         """
@@ -370,7 +481,35 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
                 lines=3,
                 placeholder="Optional for Stage1. Leave empty to transcribe with Whisper.",
             )
-            gen_text_input = gr.Textbox(label="Text to Generate", lines=8)
+            text_mode_input = gr.Radio(
+                choices=[TEXT_MODE_AUTO, TEXT_MODE_CODESWITCH],
+                label="Text to Generate",
+                value=TEXT_MODE_AUTO,
+            )
+            gen_text_input = gr.Textbox(label="Text", lines=8)
+            code_switch_count = gr.State(3)
+            code_switch_rows = []
+            code_switch_inputs = []
+            with gr.Column(visible=False) as code_switch_panel:
+                for idx in range(MAX_CODE_SWITCH_SEGMENTS):
+                    with gr.Row(visible=idx < 3) as code_switch_row:
+                        language_input = gr.Dropdown(
+                            choices=LANGUAGE_CHOICES,
+                            value="English(en)",
+                            allow_custom_value=True,
+                            label=f"Language {idx + 1}",
+                            scale=1,
+                        )
+                        segment_input = gr.Textbox(
+                            label=f"Segment {idx + 1}",
+                            lines=2,
+                            scale=3,
+                        )
+                    code_switch_rows.append(code_switch_row)
+                    code_switch_inputs.extend([language_input, segment_input])
+                with gr.Row():
+                    add_segment_btn = gr.Button("+")
+                    code_switch_sample_btn = gr.Button("Code-Switch Sample")
             generate_btn = gr.Button("Synthesize", variant="primary")
 
         with gr.Column(scale=1):
@@ -389,9 +528,23 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
         inputs=[choose_model, ref_text_input],
         outputs=[ref_text_input],
     )
+    text_mode_input.change(
+        switch_text_mode,
+        inputs=[text_mode_input],
+        outputs=[gen_text_input, code_switch_panel],
+    )
+    add_segment_btn.click(
+        add_code_switch_segment,
+        inputs=[code_switch_count],
+        outputs=[code_switch_count] + code_switch_rows,
+    )
+    code_switch_sample_btn.click(
+        load_code_switch_sample,
+        outputs=[code_switch_count] + code_switch_rows + code_switch_inputs,
+    )
     generate_btn.click(
         infer,
-        inputs=[ref_audio_input, ref_text_input, gen_text_input, choose_model],
+        inputs=[ref_audio_input, ref_text_input, text_mode_input, gen_text_input, choose_model] + code_switch_inputs,
         outputs=[audio_output, ref_text_input],
     )
 
