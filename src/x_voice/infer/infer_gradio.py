@@ -1,6 +1,7 @@
 import argparse
 import logging
 import re
+import tempfile
 import warnings
 from functools import lru_cache
 from importlib.resources import files
@@ -8,6 +9,7 @@ from importlib.resources import files
 import gradio as gr
 import numpy as np
 import torch
+import torchaudio
 from huggingface_hub import hf_hub_download
 from hydra.utils import get_class
 from omegaconf import OmegaConf
@@ -162,6 +164,18 @@ srp_model = None
 stage1_runtime = None
 stage2_runtime = None
 normalizer_cache = {}
+
+
+def save_translate_audio_result(sample_rate, waveform, lang):
+    audio_tensor = torch.as_tensor(waveform, dtype=torch.float32).unsqueeze(0)
+    output_file = tempfile.NamedTemporaryFile(
+        prefix=f"xvoice_translate_{lang}_",
+        suffix=".wav",
+        delete=False,
+    )
+    output_file.close()
+    torchaudio.save(output_file.name, audio_tensor, sample_rate)
+    return output_file.name
 
 
 def download_default_file(filename):
@@ -542,7 +556,7 @@ def translate_and_clone(
             )
             print(f"[DEBUG] translate_and_clone target={target_lang} after infer", flush=True)
             label = LANGUAGE_LABEL_BY_CODE[target_lang]
-            audio = (final_sample_rate, final_wave)
+            audio = save_translate_audio_result(final_sample_rate, final_wave, target_lang)
             results_state[label] = {
                 "lang": target_lang,
                 "text": translated_text,
