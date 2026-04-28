@@ -2,7 +2,7 @@
 
 [![python](https://img.shields.io/badge/Python-3.11-brightgreen)](https://github.com/SWivid/F5-TTS)
 [![arXiv](https://img.shields.io/badge/arXiv-Coming_soon-b31b1b.svg?logo=arXiv)](https://arxiv.org/abs/unknown)
-[![demo](https://img.shields.io/badge/GitHub-Demo-orange.svg)](unknown)
+[![demo](https://img.shields.io/badge/GitHub-Demo-orange.svg)](https://sunnyxrxrx.github.io/X-Voice-Demo/)
 [![hfspace](https://img.shields.io/badge/🤗-HF%20Space-yellow)](unknown)
 [![dataset](https://img.shields.io/badge/🤗-Dataset-yellow)](https://huggingface.co/datasets/XRXRX/X-Voice-Dataset-Train)
 [![dataset](https://img.shields.io/badge/🤗-Benchmark-yellow)](https://huggingface.co/datasets/XRXRX/X-Voice-Testset)
