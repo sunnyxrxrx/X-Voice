@@ -1284,6 +1284,7 @@ def infer_xvoice_process(
     time_language_ids_tensor = torch.tensor(time_language_ids_list, dtype=torch.long, device=device_name)
 
     with torch.inference_mode():
+        print("[DEBUG] infer_xvoice_process before model.sample", flush=True)
         generated, _ = model_obj.sample(
             cond=cond_batch,
             text=final_text_list,
@@ -1300,9 +1301,12 @@ def infer_xvoice_process(
             cfg_strength2=cfg_strength2_value,
             infer_mode=True,
         )
+        print("[DEBUG] infer_xvoice_process after model.sample", flush=True)
 
         if post_processing:
+            print("[DEBUG] infer_xvoice_process before post_processing", flush=True)
             generated = audio_post_processing(generated, threshold=2.5, limit=3.5)
+            print("[DEBUG] infer_xvoice_process after post_processing", flush=True)
 
         generated = generated.to(torch.float32)
         
@@ -1321,16 +1325,22 @@ def infer_xvoice_process(
             generated_mel_spec = gen_i.permute(0, 2, 1)
             
             if mel_spec_type_value == "vocos":
+                print("[DEBUG] infer_xvoice_process before vocoder.decode", flush=True)
                 generated_wave = vocoder.decode(generated_mel_spec).cpu()
+                print("[DEBUG] infer_xvoice_process after vocoder.decode", flush=True)
             elif mel_spec_type_value == "bigvgan":
+                print("[DEBUG] infer_xvoice_process before bigvgan", flush=True)
                 generated_wave = vocoder(generated_mel_spec).cpu()
+                print("[DEBUG] infer_xvoice_process after bigvgan", flush=True)
             else:
                 raise ValueError(f"Unsupported vocoder: {mel_spec_type_value}")
 
             if rms < target_rms_value:
                 generated_wave = generated_wave * rms / target_rms_value
             if loudness_norm:
+                print("[DEBUG] infer_xvoice_process before loudness_norm", flush=True)
                 generated_wave = normalize_audio_loudness(generated_wave, target_sample_rate, target_lufs=-23.0)
+                print("[DEBUG] infer_xvoice_process after loudness_norm", flush=True)
 
             generated_waves.append(generated_wave.squeeze().numpy())
             spectrograms.append(generated_mel_spec[0].cpu().numpy())
@@ -1372,7 +1382,9 @@ def infer_xvoice_process(
     combined_spectrogram = np.concatenate(spectrograms, axis=1) if spectrograms else None
     
     if len(gen_text) == 1:
+        print("[DEBUG] infer_xvoice_process before single return", flush=True)
         return final_waves_per_text[0], target_sample_rate, combined_spectrogram
+    print("[DEBUG] infer_xvoice_process before multi return", flush=True)
     return final_waves_per_text, target_sample_rate, combined_spectrogram
 
 

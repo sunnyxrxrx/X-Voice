@@ -502,9 +502,12 @@ def translate_and_clone(
         results_state = {}
         table_rows = []
         for target_lang in target_langs:
+            print(f"[DEBUG] translate_and_clone target={target_lang} start", flush=True)
             show_info(f"Translating and cloning: {LANGUAGE_LABEL_BY_CODE[target_lang]}")
             translated_text = translate_text_nllb(source_text, ref_lang, target_lang, device_name=device, show_info=show_info)
+            print(f"[DEBUG] translate_and_clone target={target_lang} translated={translated_text}", flush=True)
             translated_text = normalize_required_text(translated_text, target_lang)
+            print(f"[DEBUG] translate_and_clone target={target_lang} before infer", flush=True)
             final_wave, final_sample_rate, _ = infer_xvoice_process(
                 ref_audio,
                 ref_text,
@@ -537,6 +540,7 @@ def translate_and_clone(
                 post_processing=POST_PROCESSING,
                 device_name=device,
             )
+            print(f"[DEBUG] translate_and_clone target={target_lang} after infer", flush=True)
             label = LANGUAGE_LABEL_BY_CODE[target_lang]
             audio = (final_sample_rate, final_wave)
             results_state[label] = {
@@ -548,6 +552,7 @@ def translate_and_clone(
 
         first_label = next(iter(results_state))
         first_result = results_state[first_label]
+        print("[DEBUG] translate_and_clone before return", flush=True)
         return (
             table_rows,
             gr.update(choices=list(results_state.keys()), value=first_label),
