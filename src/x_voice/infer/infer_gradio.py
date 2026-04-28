@@ -478,7 +478,7 @@ def translate_and_clone(
     target_language_choices,
     show_info=gr.Info,
 ):
-    empty_results = [], gr.update(choices=[], value=None), "", gr.update(value=None), {}, ref_text
+    empty_results = "", gr.update(choices=[], value=None), "", gr.update(value=None), {}, ref_text
     if not ref_audio:
         gr.Warning("Please provide reference audio.")
         return empty_results
@@ -514,7 +514,7 @@ def translate_and_clone(
             raise ValueError("Reference text is empty.")
 
         results_state = {}
-        table_rows = []
+        result_rows = []
         for target_lang in target_langs:
             print(f"[DEBUG] translate_and_clone target={target_lang} start", flush=True)
             show_info(f"Translating and cloning: {LANGUAGE_LABEL_BY_CODE[target_lang]}")
@@ -562,13 +562,14 @@ def translate_and_clone(
                 "text": translated_text,
                 "audio": audio,
             }
-            table_rows.append([label, translated_text])
+            result_rows.append((label, translated_text))
 
         first_label = next(iter(results_state))
         first_result = results_state[first_label]
+        results_markdown = format_translate_results_markdown(result_rows)
         print("[DEBUG] translate_and_clone before return", flush=True)
         return (
-            table_rows,
+            results_markdown,
             gr.update(choices=list(results_state.keys()), value=first_label),
             first_result["text"],
             first_result["audio"],
@@ -600,6 +601,7 @@ def switch_text_mode(text_mode):
 
 
 def switch_app_mode(app_mode):
+    print(f"[DEBUG] switch_app_mode: {app_mode}", flush=True)
     return (
         gr.update(visible=app_mode == APP_MODE_CLONE),
         gr.update(visible=app_mode == APP_MODE_TRANSLATE_CLONE),
@@ -622,6 +624,32 @@ def preview_translate_result(results_state, preview_label):
         return "", gr.update(value=None)
     result = results_state[preview_label]
     return result["text"], result["audio"]
+
+
+def format_translate_results_markdown(result_rows):
+    if not result_rows:
+        return ""
+    lines = []
+    for label, translated_text in result_rows:
+        safe_text = translated_text.replace("\n", " ").strip()
+        lines.append(f"**{label}**  \n{safe_text}")
+    return "\n\n".join(lines)
+
+
+def load_clone_english_sample():
+    return EXAMPLE_REF_EN, "Some call me nature, others call me mother nature."
+
+
+def load_clone_mandarin_sample():
+    return EXAMPLE_REF_ZH, "对，这就是我，万人敬仰的太乙真人。"
+
+
+def load_translate_english_sample():
+    return EXAMPLE_REF_EN, "Some call me nature, others call me mother nature.", "English(en)"
+
+
+def load_translate_mandarin_sample():
+    return EXAMPLE_REF_ZH, "对，这就是我，万人敬仰的太乙真人。", "Mandarin(zh)"
 
 
 def add_code_switch_segment(current_count):
@@ -734,14 +762,10 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
 
             with gr.Column(scale=1):
                 audio_output = gr.Audio(label="Generated Audio")
-                gr.Examples(
-                    examples=[
-                        [EXAMPLE_REF_EN, "Some call me nature, others call me mother nature."],
-                        [EXAMPLE_REF_ZH, "对，这就是我，万人敬仰的太乙真人。"],
-                    ],
-                    inputs=[ref_audio_input, ref_text_input],
-                    label="Example Prompts",
-                )
+                gr.Markdown("**Example Prompts**")
+                with gr.Row():
+                    clone_english_sample_btn = gr.Button("English Sample")
+                    clone_mandarin_sample_btn = gr.Button("Mandarin Sample")
 
     with gr.Group(visible=False) as translate_panel:
         translate_results_state = gr.State({})
@@ -759,34 +783,21 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
                     allow_custom_value=True,
                     label="Reference Language",
                 )
-                target_languages_input = gr.CheckboxGroup(
+                target_languages_input = gr.Dropdown(
                     choices=LANGUAGE_CHOICES,
                     label="Target Languages",
+                    multiselect=True,
                 )
                 with gr.Row():
                     select_all_targets_btn = gr.Button("Generate All Languages")
                     translate_clone_btn = gr.Button("Translate & Clone", variant="primary")
-                gr.Examples(
-                    examples=[
-                        [EXAMPLE_REF_EN, "Some call me nature, others call me mother nature.", "English(en)"],
-                        [EXAMPLE_REF_ZH, "对，这就是我，万人敬仰的太乙真人。", "Mandarin(zh)"],
-                    ],
-                    inputs=[
-                        translate_ref_audio_input,
-                        translate_ref_text_input,
-                        translate_ref_language_input,
-                    ],
-                    label="Example Prompts",
-                )
+                gr.Markdown("**Example Prompts**")
+                with gr.Row():
+                    translate_english_sample_btn = gr.Button("English Sample")
+                    translate_mandarin_sample_btn = gr.Button("Mandarin Sample")
 
             with gr.Column(scale=1):
-                translate_results_table = gr.Dataframe(
-                    headers=["Language", "Translated Text"],
-                    datatype=["str", "str"],
-                    row_count=(0, "dynamic"),
-                    col_count=(2, "fixed"),
-                    label="Results Table",
-                )
+                translate_results_markdown = gr.Markdown(label="Results")
                 preview_language_input = gr.Dropdown(
                     choices=[],
                     value=None,
@@ -802,6 +813,14 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
         switch_app_mode,
         inputs=[app_mode_input],
         outputs=[clone_panel, translate_panel],
+    )
+    clone_english_sample_btn.click(
+        load_clone_english_sample,
+        outputs=[ref_audio_input, ref_text_input],
+    )
+    clone_mandarin_sample_btn.click(
+        load_clone_mandarin_sample,
+        outputs=[ref_audio_input, ref_text_input],
     )
     choose_model.change(
         switch_model,
@@ -844,6 +863,22 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
         inputs=[translate_ref_language_input],
         outputs=[target_languages_input],
     )
+    translate_english_sample_btn.click(
+        load_translate_english_sample,
+        outputs=[
+            translate_ref_audio_input,
+            translate_ref_text_input,
+            translate_ref_language_input,
+        ],
+    )
+    translate_mandarin_sample_btn.click(
+        load_translate_mandarin_sample,
+        outputs=[
+            translate_ref_audio_input,
+            translate_ref_text_input,
+            translate_ref_language_input,
+        ],
+    )
     translate_clone_btn.click(
         translate_and_clone,
         inputs=[
@@ -853,7 +888,7 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
             target_languages_input,
         ],
         outputs=[
-            translate_results_table,
+            translate_results_markdown,
             preview_language_input,
             preview_translated_text,
             preview_audio_output,
