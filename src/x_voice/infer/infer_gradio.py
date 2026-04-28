@@ -262,9 +262,9 @@ def infer(ref_audio, ref_text, gen_text, model_choice, show_info=gr.Info):
             final_wave, final_sample_rate, _ = infer_xvoice_process(
                 ref_audio,
                 ref_text,
-                gen_text,
+                [gen_text],
                 ref_lang,
-                gen_lang_spans,
+                [gen_lang_spans],
                 runtime["tokenizer"],
                 runtime["ipa_tokenizer_getter"],
                 runtime["model"],
@@ -300,8 +300,8 @@ def infer(ref_audio, ref_text, gen_text, model_choice, show_info=gr.Info):
         show_info(f"Detected language: gen={display_gen_lang}")
         final_wave, final_sample_rate, _ = infer_xvoice_droptext_process(
             ref_audio,
-            gen_text,
-            gen_lang_spans,
+            [gen_text],
+            [gen_lang_spans],
             runtime["tokenizer"],
             runtime["ipa_tokenizer_getter"],
             runtime["model"],
@@ -377,8 +377,8 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
             audio_output = gr.Audio(label="Generated Audio")
             gr.Examples(
                 examples=[
-                    [EXAMPLE_REF_EN, "Some call me nature, others call me mother nature"],
-                    [EXAMPLE_REF_ZH, "对，这就是我，万人敬仰的太乙真人"],
+                    [EXAMPLE_REF_EN, "Some call me nature, others call me mother nature."],
+                    [EXAMPLE_REF_ZH, "对，这就是我，万人敬仰的太乙真人。"],
                 ],
                 inputs=[ref_audio_input, ref_text_input],
                 label="Example Prompts",
