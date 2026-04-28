@@ -1116,8 +1116,8 @@ def infer_xvoice_process(
         durations.append(duration)
 
     B = len(all_batches)
-    # Expand cond to match batch size [B, C, T]
-    cond_batch = audio.expand(B, -1, -1)
+    # CFM.sample expects raw waveform as [B, T] and computes mel internally.
+    cond_batch = audio.expand(B, -1)
 
     duration_tensor = torch.tensor(durations, dtype=torch.long, device=device_name)
     
