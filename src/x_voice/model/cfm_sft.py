@@ -177,6 +177,7 @@ class CFM_SFT(nn.Module):
                 prefix_token_id=prefix_token_id,
                 anchor_token_ids=anchor_token_ids,
             )
+            time_language_ids = None
             if language_ids.dim() == 2:
                 language_ids = build_prefixed_language_ids_tokenwise(
                     text=base_text,
@@ -187,6 +188,7 @@ class CFM_SFT(nn.Module):
                     unknown_lang_id=self.transformer.num_languages,
                 )
             else:
+                time_language_ids = language_ids.clone()
                 language_ids = build_prefixed_language_ids(
                     text=base_text,
                     total_lens=duration,
@@ -255,6 +257,7 @@ class CFM_SFT(nn.Module):
                     drop_lang=False,
                     cache=True,
                     language_ids=language_ids,
+                    time_language_ids=time_language_ids,
                     infer_mode=infer_mode,
                     codeswitch_time_unknown_lang=codeswitch_time_unknown_lang,
                 )
@@ -270,6 +273,7 @@ class CFM_SFT(nn.Module):
                 cfg_infer=True,
                 cache=True,
                 language_ids=language_ids,
+                time_language_ids=time_language_ids,
                 layered=layered,
                 infer_mode=infer_mode,
                 codeswitch_time_unknown_lang=codeswitch_time_unknown_lang,

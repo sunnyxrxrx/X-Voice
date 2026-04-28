@@ -8,6 +8,9 @@ from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
 
+# import debugpy
+# debugpy.listen(("localhost",567))
+# debugpy.wait_for_client()
 
 def _silence_inference_logs():
     warnings.filterwarnings("ignore")
@@ -63,6 +66,7 @@ from x_voice.infer.utils_infer import (
     speed,
     sway_sampling_coef,
     target_rms,
+    layered,
 )
 
 
@@ -99,6 +103,7 @@ parser.add_argument("--target_rms", type=float, help=f"Target RMS, default {targ
 parser.add_argument("--cross_fade_duration", type=float, help=f"Cross-fade duration, default {cross_fade_duration}.")
 parser.add_argument("--nfe_step", type=int, help=f"Sampling steps, default {nfe_step}.")
 parser.add_argument("--cfg_strength", type=float, help=f"CFG strength, default {cfg_strength}.")
+parser.add_argument("--layered", action="store_true", help=f"Decoupled CFG.")
 parser.add_argument("--cfg_strength2", type=float, help="Secondary CFG strength for mandatory layered CFG.")
 parser.add_argument("--cfg_schedule", type=str, choices=["square", "cosine", "none"], help="CFG schedule.")
 parser.add_argument("--cfg_decay_time", type=float, default=None, help="CFG schedule decay start time.")
@@ -174,6 +179,7 @@ target_rms = args.target_rms or config.get("target_rms", target_rms)
 cross_fade_duration = args.cross_fade_duration or config.get("cross_fade_duration", cross_fade_duration)
 nfe_step = args.nfe_step or config.get("nfe_step", nfe_step)
 cfg_strength = args.cfg_strength or config.get("cfg_strength", 2.5)
+layered = args.layered or config.get("layered", layered)
 cfg_strength2 = args.cfg_strength2 if args.cfg_strength2 is not None else config.get("cfg_strength2", 4.0)
 cfg_schedule = args.cfg_schedule if args.cfg_schedule is not None else config.get("cfg_schedule", "square")
 if cfg_schedule == "none":
@@ -262,6 +268,7 @@ srp_model = load_srp_model(srp_model_cfg_file, srp_ckpt_file, device)
 
 
 def main():
+    global gen_text
     main_voice = {
         "ref_audio": ref_audio,
         "ref_text": DROP_TEXT_PLACEHOLDER,
@@ -286,8 +293,40 @@ def main():
     generated_audio_segments = []
     reg1 = r"(?=\[[^\[\]]+\])"
     reg2 = r"^\[([^\[\]]+)\]"
+    
+    # Auto code-switch preprocessing
+    if auto_detect_lang:
+        from x_voice.infer.utils_infer import auto_split_mixed_text
+        new_gen_text = ""
+        for chunk in re.split(reg1, gen_text):
+            if not chunk.strip():
+                continue
+            match = re.match(reg2, chunk)
+            tag = match.group(0) if match else ""
+            content = chunk[len(tag):] if match else chunk
+            
+            voice = "main"
+            segment_gen_lang = None
+            if match:
+                voice, segment_gen_lang = parse_voice_lang_tag(match.group(1), voice_names=voices.keys())
+            
+            # If the user explicitly provided a language tag (e.g., [alice|en]), respect it and don't auto-split
+            if segment_gen_lang:
+                new_gen_text += f"[{voice}|{segment_gen_lang}]{content}"
+            else:
+                # Use the specified lang as fallback, or the global gen_lang
+                fallback = normalize_lang_code(voices.get(voice, {}).get("gen_lang", gen_lang))
+                split_content = auto_split_mixed_text(content, fallback)
+                
+                for lang, text in split_content:
+                    new_gen_text += f"[{voice}|{lang}]{text}"
+                
+        gen_text = new_gen_text
     chunks = re.split(reg1, gen_text)
 
+    # collect all chunks' information
+    segments_info = []
+    
     for text in chunks:
         if not text.strip():
             continue
@@ -308,24 +347,45 @@ def main():
         if not gen_text_:
             continue
 
-        ref_audio_ = voices[voice]["ref_audio"]
+        if segment_gen_lang is None:
+            if auto_detect_lang:
+                segment_gen_lang = detect_segment_lang(gen_text_, segment_gen_lang)
         if segment_gen_lang is None:
             segment_gen_lang = normalize_lang_code(voices[voice].get("gen_lang", gen_lang))
-        if auto_detect_lang:
-            segment_gen_lang = detect_segment_lang(gen_text_, segment_gen_lang)
-        if not segment_gen_lang:
+        if segment_gen_lang is None:
             raise ValueError(f"gen_lang is required for voice '{voice}'.")
 
         if normalize_text:
             gen_text_ = normalize_text_for_lang(gen_text_, segment_gen_lang, normalizer_cache)
 
-        local_speed = voices[voice].get("speed", speed)
-        print(f"Voice: {voice}, gen_lang: {segment_gen_lang}")
+        segments_info.append({
+            "voice": voice,
+            "text": gen_text_,
+            "lang": segment_gen_lang
+        })
 
-        audio_segment, final_sample_rate, _ = infer_xvoice_droptext_process(
+    # Grouped aggregation and reasoning by speaker
+    voice_to_segments = {}
+    for i, seg in enumerate(segments_info):
+        voice = seg["voice"]
+        if voice not in voice_to_segments:
+            voice_to_segments[voice] = {"indices": [], "texts": [], "langs": []}
+        voice_to_segments[voice]["indices"].append(i)
+        voice_to_segments[voice]["texts"].append(seg["text"])
+        voice_to_segments[voice]["langs"].append(seg["lang"])
+    
+    print(voice_to_segments)
+    generated_audio_segments = [None] * len(segments_info)
+    
+    for voice, data in voice_to_segments.items():
+        ref_audio_ = voices[voice]["ref_audio"]
+        local_speed = voices[voice].get("speed", speed)
+        print(f"\nProcessing batch for voice: {voice} ({len(data['texts'])} segments)")
+
+        audio_segments, final_sample_rate, _ = infer_xvoice_droptext_process(
             ref_audio_,
-            gen_text_,
-            segment_gen_lang,
+            data["texts"],
+            data["langs"],
             tokenizer,
             ipa_tokenizer_getter,
             ema_model,
@@ -337,6 +397,7 @@ def main():
             cross_fade_duration_value=cross_fade_duration,
             nfe_step_value=nfe_step,
             cfg_strength_value=cfg_strength,
+            layered=layered,
             cfg_strength2_value=cfg_strength2,
             cfg_schedule_value=cfg_schedule,
             cfg_decay_time_value=cfg_decay_time,
@@ -348,21 +409,30 @@ def main():
             loudness_norm=loudness_norm,
             post_processing=post_processing,
             device_name=device,
+            remove_silence_chunk=remove_silence,
         )
-        generated_audio_segments.append(audio_segment)
+        
+        # ensure it's a list even if 1 item returned
+        if not isinstance(audio_segments, list):
+            audio_segments = [audio_segments]
 
-        if save_chunk:
-            save_text = gen_text_
-            if len(save_text) > 200:
-                save_text = save_text[:200] + " ... "
-            if use_legacy_text:
-                save_text = unidecode(save_text)
-            save_text = re.sub(r"[\\/:\0]", "_", save_text)
-            sf.write(
-                os.path.join(output_chunk_dir, f"{len(generated_audio_segments) - 1}_{save_text}.wav"),
-                audio_segment,
-                final_sample_rate,
-            )
+        for idx, segment_audio, segment_text in zip(data["indices"], audio_segments, data["texts"]):
+            generated_audio_segments[idx] = segment_audio
+            if save_chunk and segment_audio is not None:
+                save_text = segment_text
+                if len(save_text) > 200:
+                    save_text = save_text[:200] + " ... "
+                if use_legacy_text:
+                    save_text = unidecode(save_text)
+                save_text = re.sub(r"[\\/:\0]", "_", save_text)
+                sf.write(
+                    os.path.join(output_chunk_dir, f"{idx}_{save_text}.wav"),
+                    segment_audio,
+                    final_sample_rate,
+                )
+
+    # filter out None elements
+    generated_audio_segments = [seg for seg in generated_audio_segments if seg is not None]
 
     if generated_audio_segments:
         final_wave = np.concatenate(generated_audio_segments)

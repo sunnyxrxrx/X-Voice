@@ -481,6 +481,40 @@ def remove_silence_for_generated_wav(filename):
     aseg.export(filename, format="wav")
 
 
+def remove_silence_for_generated_wav_numpy(wave_np, sample_rate, keep_silence=100):
+    """
+    Remove silence from a numpy array representing audio wave directly, 
+    useful for chunk-level trimming before concatenation.
+    """
+    # Convert numpy array to AudioSegment
+    # pydub requires audio to be in 16-bit integer format
+    wave_np_int16 = np.int16(wave_np * 32767)
+    aseg = AudioSegment(
+        wave_np_int16.tobytes(), 
+        frame_rate=sample_rate,
+        sample_width=2, 
+        channels=1
+    )
+
+    # For internal chunks, we don't want long silences.
+    non_silent_segs = silence.split_on_silence(
+        aseg, min_silence_len=100, silence_thresh=-50, keep_silence=keep_silence, seek_step=10
+    )
+    
+    if not non_silent_segs:
+        # If everything is stripped (rare), return original
+        return wave_np
+
+    non_silent_wave = AudioSegment.silent(duration=0)
+    for non_silent_seg in non_silent_segs:
+        non_silent_wave += non_silent_seg
+        
+    # Convert back to float32 numpy array
+    samples = np.array(non_silent_wave.get_array_of_samples())
+    return samples.astype(np.float32) / 32767.0
+
+
+
 # save spectrogram
 
 
@@ -687,6 +721,79 @@ def detect_segment_lang(text, fallback_lang):
     except Exception as exc:
         print(f"Warning: failed to detect language for text '{text}': {exc}")
         return fallback_lang
+
+def auto_split_mixed_text(text: str, fallback_lang: str) -> list[tuple[str, str]]:
+    """
+    Automatically splits mixed language text into segments.
+    Returns a list of tuples: [(lang, text), ...]
+    """
+    # Regex patterns for different script blocks
+    # Japanese kana & Chinese kanji (CJK)
+    cjk_pattern = r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF\u3000-\u303F\uFF00-\uFFEF]'
+    # Korean Hangul
+    ko_pattern = r'[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]'
+    # Thai script
+    th_pattern = r'[\u0E00-\u0E7F]'
+    
+    segments = []
+    current_segment = ""
+    current_type = None
+
+    for char in text:
+        if re.match(cjk_pattern, char):
+            char_type = 'cjk'
+        elif re.match(ko_pattern, char):
+            char_type = 'ko'
+        elif re.match(th_pattern, char):
+            char_type = 'th'
+        # \w matches all Unicode word characters (letters from any language, plus digits and underscore).
+        # So \W matches everything else (spaces, punctuation, symbols).
+        elif re.match(r'[\W\d_]', char):
+            char_type = 'neutral'
+        else:
+            # Everything else (Latin, Cyrillic, Greek, Arabic, Devanagari, etc.)
+            char_type = 'other_lang'
+
+        if current_type is None:
+            if char_type != 'neutral':
+                current_type = char_type
+            current_segment += char
+        elif char_type == 'neutral':
+            current_segment += char
+        elif char_type == current_type:
+            current_segment += char
+        else:
+            segments.append((current_segment, current_type))
+            current_segment = char
+            current_type = char_type
+
+    if current_segment:
+        segments.append((current_segment, current_type if current_type else 'cjk'))
+
+    result = []
+    for seg_text, seg_type in segments:
+        if not seg_text.strip():
+            # If it's just spaces or punctuation, append to the last segment if possible
+            if result:
+                result[-1] = (result[-1][0], result[-1][1] + seg_text)
+            else:
+                result.append((fallback_lang, seg_text))
+            continue
+            
+        if seg_type == 'cjk':
+            lang = "zh" #detect_segment_lang(seg_text, "zh")
+        elif seg_type == 'ko':
+            lang = 'ko'
+        elif seg_type == 'th':
+            lang = 'th'
+        elif seg_type == 'other_lang':
+            lang = detect_segment_lang(seg_text, "en") # Default text to English, fallback to 'en'
+        else:
+            lang = fallback_lang
+            
+        result.append((lang, seg_text))
+        
+    return result
 
 
 def resolve_package_example(path):
@@ -936,91 +1043,126 @@ def infer_xvoice_process(
     denoise_ref=False,
     loudness_norm=False,
     post_processing=False,
+    remove_silence_chunk=False,
     device_name=device,
 ):
+    if isinstance(gen_text, str):
+        gen_text = [gen_text]
+    if isinstance(gen_lang, str):
+        gen_lang = [gen_lang]
+
+    assert len(gen_text) == len(gen_lang), "gen_text and gen_lang lists must have the same length"
+
     audio, rms = prepare_ref_audio_tensor(ref_audio, target_rms_value, denoise_ref, device_name)
     ref_audio_len = audio.shape[-1] // hop_length
     ref_seconds = audio.shape[-1] / target_sample_rate
     remaining_seconds = 26 - ref_seconds
     predicted_speed = predict_ref_speed(srp_model, audio)
 
-    if sp_type in {"syllable", "pretrained"}:
-        if sp_type == "pretrained" and predicted_speed:
-            max_units = max(int(predicted_speed * remaining_seconds * local_speed), 1)
+    all_batches = []
+    for text, lang in zip(gen_text, gen_lang):
+        if sp_type in {"syllable", "pretrained"}:
+            if sp_type == "pretrained" and predicted_speed:
+                max_units = max(int(predicted_speed * remaining_seconds * local_speed), 1)
+            else:
+                max_units = max(
+                    int(count_units(ref_text, ref_lang) / ref_seconds * remaining_seconds * local_speed),
+                    1,
+                )
+            gen_text_batches = chunk_text_by_units(text, lang, max_units)
         else:
-            max_units = max(
-                int(count_units(ref_text, ref_lang) / ref_seconds * remaining_seconds * local_speed),
-                1,
-            )
-        gen_text_batches = chunk_text_by_units(gen_text, gen_lang, max_units)
-    else:
-        max_chars = int(len(ref_text.encode("utf-8")) / ref_seconds * remaining_seconds * local_speed)
-        gen_text_batches = chunk_text_by_chars(gen_text, max_chars=max(max_chars, 1))
+            max_chars = int(len(ref_text.encode("utf-8")) / ref_seconds * remaining_seconds * local_speed)
+            gen_text_batches = chunk_text_by_chars(text, max_chars=max(max_chars, 1))
+        
+        for batch_text in gen_text_batches:
+            all_batches.append((batch_text, lang))
 
-    for i, batch_text in enumerate(gen_text_batches):
-        print(f"gen_text {i}", batch_text)
-    print("\n")
-    print(f"Generating audio in {len(gen_text_batches)} batches...")
+    print(f"\nGenerating audio in {len(all_batches)} chunks...")
+    
+    if len(all_batches) == 0:
+        return None, target_sample_rate, None
 
-    generated_waves = []
-    spectrograms = []
+    # Construct batch inputs
+    final_text_list = []
+    language_ids_list = []
+    durations = []
+    
+    ref_tokens = prepare_text_tokens(ref_text, tokenizer_name, ref_lang, ipa_tokenizer_getter)
+    ref_lang_id = lang_to_id(ref_lang, lang_to_id_map)
 
-    def process_batch(batch_text):
+    for batch_text, lang in all_batches:
         local_batch_speed = local_speed
-        if count_units(batch_text, gen_lang) < 4:
+        if count_units(batch_text, lang) < 4:
             local_batch_speed = min(local_batch_speed, 0.5)
 
-        ref_tokens = prepare_text_tokens(ref_text, tokenizer_name, ref_lang, ipa_tokenizer_getter)
-        gen_tokens = prepare_text_tokens(batch_text, tokenizer_name, gen_lang, ipa_tokenizer_getter)
-        final_text_list = [ref_tokens + gen_tokens]
-
-        ref_lang_id = lang_to_id(ref_lang, lang_to_id_map)
-        gen_lang_id = lang_to_id(gen_lang, lang_to_id_map)
-        language_ids = torch.tensor(
-            [[ref_lang_id] * len(ref_tokens) + [gen_lang_id] * len(gen_tokens)],
-            dtype=torch.long,
-            device=device_name,
-        )
+        gen_tokens = prepare_text_tokens(batch_text, tokenizer_name, lang, ipa_tokenizer_getter)
+        final_text_list.append(ref_tokens + gen_tokens)
+        
+        gen_lang_id = lang_to_id(lang, lang_to_id_map)
+        language_ids_list.append([ref_lang_id] * len(ref_tokens) + [gen_lang_id] * len(gen_tokens))
 
         duration = estimate_duration(
             ref_audio_len,
             ref_text,
             batch_text,
             ref_lang,
-            gen_lang,
+            lang,
             sp_type,
             local_batch_speed,
             fix_duration_value,
             predicted_speed,
         )
+        durations.append(duration)
 
-        with torch.inference_mode():
-            generated, _ = model_obj.sample(
-                cond=audio,
-                text=final_text_list,
-                duration=duration,
-                steps=nfe_step_value,
-                cfg_strength=cfg_strength_value,
-                sway_sampling_coef=sway_sampling_coef_value,
-                language_ids=language_ids,
-                cfg_schedule=cfg_schedule_value,
-                cfg_decay_time=cfg_decay_time_value,
-                reverse=reverse,
-                layered=True,
-                cfg_strength2=cfg_strength2_value,
-                infer_mode=True,
-            )
+    B = len(all_batches)
+    # Expand cond to match batch size [B, C, T]
+    cond_batch = audio.expand(B, -1, -1)
 
-            if post_processing:
-                generated = audio_post_processing(generated, threshold=2.5, limit=3.5)
+    duration_tensor = torch.tensor(durations, dtype=torch.long, device=device_name)
+    
+    # language_ids_list is a list of lists of varying lengths.
+    # In CFM sample, language_ids can be [b, nt]. We need to pad it to max_seq_len.
+    # We can use torch.nn.utils.rnn.pad_sequence
+    max_len = max(len(ids) for ids in language_ids_list)
+    padded_lang_ids = [ids + [lang_to_id_map.get("unk", 0)] * (max_len - len(ids)) for ids in language_ids_list]
+    language_ids_tensor = torch.tensor(padded_lang_ids, dtype=torch.long, device=device_name)
 
-            generated = generated.to(torch.float32)
+    with torch.inference_mode():
+        generated, _ = model_obj.sample(
+            cond=cond_batch,
+            text=final_text_list,
+            duration=duration_tensor,
+            steps=nfe_step_value,
+            cfg_strength=cfg_strength_value,
+            sway_sampling_coef=sway_sampling_coef_value,
+            language_ids=language_ids_tensor,
+            cfg_schedule=cfg_schedule_value,
+            cfg_decay_time=cfg_decay_time_value,
+            reverse=reverse,
+            layered=layered,
+            cfg_strength2=cfg_strength2_value,
+            infer_mode=True,
+        )
+
+        if post_processing:
+            generated = audio_post_processing(generated, threshold=2.5, limit=3.5)
+
+        generated = generated.to(torch.float32)
+        
+        generated_waves = []
+        spectrograms = []
+        
+        for i in range(B):
+            duration_i = durations[i]
+            gen_i = generated[i:i+1] # [1, max_duration, num_channels]
+            
             if reverse:
-                generated = generated[:, : duration - ref_audio_len, :]
+                gen_i = gen_i[:, : duration_i - ref_audio_len, :]
             else:
-                generated = generated[:, ref_audio_len:duration, :]
-
-            generated_mel_spec = generated.permute(0, 2, 1)
+                gen_i = gen_i[:, ref_audio_len:duration_i, :]
+                
+            generated_mel_spec = gen_i.permute(0, 2, 1)
+            
             if mel_spec_type_value == "vocos":
                 generated_wave = vocoder.decode(generated_mel_spec).cpu()
             elif mel_spec_type_value == "bigvgan":
@@ -1033,39 +1175,61 @@ def infer_xvoice_process(
             if loudness_norm:
                 generated_wave = normalize_audio_loudness(generated_wave, target_sample_rate, target_lufs=-23.0)
 
-            return generated_wave.squeeze().numpy(), generated_mel_spec[0].cpu().numpy()
+            generated_waves.append(generated_wave.squeeze().numpy())
+            spectrograms.append(generated_mel_spec[0].cpu().numpy())
 
-    with ThreadPoolExecutor() as executor:
-        futures = [executor.submit(process_batch, batch_text) for batch_text in gen_text_batches]
-        for future in progress.tqdm(futures) if progress is not None else futures:
-            generated_wave, generated_mel_spec = future.result()
-            generated_waves.append(generated_wave)
-            spectrograms.append(generated_mel_spec)
+    # Group generated_waves back to original gen_text items
+    waves_by_original = [[] for _ in range(len(gen_text))]
+    chunk_idx = 0
+    for text_idx, (text, lang) in enumerate(zip(gen_text, gen_lang)):
+        if sp_type in {"syllable", "pretrained"}:
+            if sp_type == "pretrained" and predicted_speed:
+                max_units = max(int(predicted_speed * remaining_seconds * local_speed), 1)
+            else:
+                max_units = max(
+                    int(count_units(ref_text, ref_lang) / ref_seconds * remaining_seconds * local_speed),
+                    1,
+                )
+            gen_text_batches = chunk_text_by_units(text, lang, max_units)
+        else:
+            max_chars = int(len(ref_text.encode("utf-8")) / ref_seconds * remaining_seconds * local_speed)
+            gen_text_batches = chunk_text_by_chars(text, max_chars=max(max_chars, 1))
+            
+        for _ in gen_text_batches:
+            waves_by_original[text_idx].append(generated_waves[chunk_idx])
+            chunk_idx += 1
 
-    if not generated_waves:
-        return None, target_sample_rate, None
+    final_waves_per_text = []
+    for chunks_for_text in waves_by_original:
+        if not chunks_for_text:
+            final_waves_per_text.append(None)
+            continue
+            
+        if cross_fade_duration_value <= 0:
+            final_wave = np.concatenate(chunks_for_text)
+        else:
+            final_wave = chunks_for_text[0]
+            for next_wave in chunks_for_text[1:]:
+                cross_fade_samples = int(cross_fade_duration_value * target_sample_rate)
+                cross_fade_samples = min(cross_fade_samples, len(final_wave), len(next_wave))
+                if cross_fade_samples <= 0:
+                    final_wave = np.concatenate([final_wave, next_wave])
+                    continue
+                prev_overlap = final_wave[-cross_fade_samples:]
+                next_overlap = next_wave[:cross_fade_samples]
+                fade_out = np.linspace(1, 0, cross_fade_samples)
+                fade_in = np.linspace(0, 1, cross_fade_samples)
+                cross_faded_overlap = prev_overlap * fade_out + next_overlap * fade_in
+                final_wave = np.concatenate(
+                    [final_wave[:-cross_fade_samples], cross_faded_overlap, next_wave[cross_fade_samples:]]
+                )
+        final_waves_per_text.append(final_wave)
 
-    if cross_fade_duration_value <= 0:
-        final_wave = np.concatenate(generated_waves)
-    else:
-        final_wave = generated_waves[0]
-        for next_wave in generated_waves[1:]:
-            cross_fade_samples = int(cross_fade_duration_value * target_sample_rate)
-            cross_fade_samples = min(cross_fade_samples, len(final_wave), len(next_wave))
-            if cross_fade_samples <= 0:
-                final_wave = np.concatenate([final_wave, next_wave])
-                continue
-            prev_overlap = final_wave[-cross_fade_samples:]
-            next_overlap = next_wave[:cross_fade_samples]
-            fade_out = np.linspace(1, 0, cross_fade_samples)
-            fade_in = np.linspace(0, 1, cross_fade_samples)
-            cross_faded_overlap = prev_overlap * fade_out + next_overlap * fade_in
-            final_wave = np.concatenate(
-                [final_wave[:-cross_fade_samples], cross_faded_overlap, next_wave[cross_fade_samples:]]
-            )
-
-    combined_spectrogram = np.concatenate(spectrograms, axis=1)
-    return final_wave, target_sample_rate, combined_spectrogram
+    combined_spectrogram = np.concatenate(spectrograms, axis=1) if spectrograms else None
+    
+    if len(gen_text) == 1:
+        return final_waves_per_text[0], target_sample_rate, combined_spectrogram
+    return final_waves_per_text, target_sample_rate, combined_spectrogram
 
 
 def infer_xvoice_droptext_process(
@@ -1084,6 +1248,7 @@ def infer_xvoice_droptext_process(
     cross_fade_duration_value=cross_fade_duration,
     nfe_step_value=nfe_step,
     cfg_strength_value=cfg_strength,
+    layered=layered,
     cfg_strength2_value=4.0,
     cfg_schedule_value="square",
     cfg_decay_time_value=0.6,
@@ -1094,74 +1259,106 @@ def infer_xvoice_droptext_process(
     denoise_ref=False,
     loudness_norm=False,
     post_processing=False,
+    remove_silence_chunk=False,
     device_name=device,
 ):
     if srp_model is None:
         raise ValueError("drop-text inference requires a loaded SRP model.")
 
+    if isinstance(gen_text, str):
+        gen_text = [gen_text]
+    if isinstance(gen_lang, str):
+        gen_lang = [gen_lang]
+
+    assert len(gen_text) == len(gen_lang), "gen_text and gen_lang lists must have the same length"
+
     audio, rms = prepare_ref_audio_tensor(ref_audio, target_rms_value, denoise_ref, device_name)
     ref_audio_len = audio.shape[-1] // hop_length
     prompt_seconds = audio.shape[-1] / target_sample_rate
-    remaining_seconds = 26 - prompt_seconds
+    remaining_seconds = 22 - prompt_seconds
     predicted_speed = predict_ref_speed(srp_model, audio)
     if predicted_speed is None:
         raise ValueError("drop-text inference requires SRP speed prediction.")
 
-    max_units = max(int(predicted_speed * remaining_seconds * local_speed), 1)
-    gen_text_batches = chunk_text_by_units(gen_text, gen_lang, max_units)
+    all_batches = []
+    for text, lang in zip(gen_text, gen_lang):
+        max_units = max(int(predicted_speed * remaining_seconds * local_speed), 1)
+        gen_text_batches = chunk_text_by_units(text, lang, max_units)
+        for batch_text in gen_text_batches:
+            all_batches.append((batch_text, lang))
 
-    for i, batch_text in enumerate(gen_text_batches):
-        print(f"gen_text {i}", batch_text)
-    print("\n")
-    print(f"Generating audio in {len(gen_text_batches)} batches...")
+    print(f"\nGenerating audio in {len(all_batches)} chunks...")
+    
+    if len(all_batches) == 0:
+        return None, target_sample_rate, None
 
-    generated_waves = []
-    spectrograms = []
-    gen_lang_id = lang_to_id(gen_lang, lang_to_id_map)
-
-    def process_batch(batch_text):
+    # Construct batch inputs
+    final_text_list = []
+    language_ids_list = []
+    durations = []
+    
+    for batch_text, lang in all_batches:
         local_batch_speed = local_speed
-        if count_units(batch_text, gen_lang) < 4:
+        if count_units(batch_text, lang) < 4:
             local_batch_speed = min(local_batch_speed, 0.5)
 
-        gen_tokens = prepare_text_tokens(batch_text, tokenizer_name, gen_lang, ipa_tokenizer_getter)
-        final_text_list = [gen_tokens]
+        gen_tokens = prepare_text_tokens(batch_text, tokenizer_name, lang, ipa_tokenizer_getter)
+        final_text_list.append(gen_tokens)
+        
+        gen_lang_id = lang_to_id(lang, lang_to_id_map)
+        language_ids_list.append(gen_lang_id)
 
         if fix_duration_value is not None:
             duration = int(fix_duration_value * target_sample_rate / hop_length)
         else:
-            gen_seconds = count_units(batch_text, gen_lang) / max(predicted_speed, 0.1) / local_batch_speed
+            gen_seconds = max(1.0, count_units(batch_text, lang) / max(predicted_speed, 0.1) / local_batch_speed)
             duration = ref_audio_len + int(gen_seconds * target_sample_rate / hop_length)
+        durations.append(duration)
 
-        language_ids = torch.tensor([gen_lang_id], dtype=torch.long, device=device_name)
+    B = len(all_batches)
+    # Expand cond to match batch size [b, nw], transform to mel in cfm.py
+    cond_batch = audio.expand(B, -1)
 
-        with torch.inference_mode():
-            generated, _ = model_obj.sample(
-                cond=audio,
-                text=final_text_list,
-                duration=duration,
-                steps=nfe_step_value,
-                cfg_strength=cfg_strength_value,
-                sway_sampling_coef=sway_sampling_coef_value,
-                language_ids=language_ids,
-                cfg_schedule=cfg_schedule_value,
-                cfg_decay_time=cfg_decay_time_value,
-                reverse=reverse,
-                layered=True,
-                cfg_strength2=cfg_strength2_value,
-                infer_mode=True,
-            )
+    duration_tensor = torch.tensor(durations, dtype=torch.long, device=device_name)
+    language_ids_tensor = torch.tensor(language_ids_list, dtype=torch.long, device=device_name)
 
-            if post_processing:
-                generated = audio_post_processing(generated, threshold=2.5, limit=3.5)
+    with torch.inference_mode():
+        generated, _ = model_obj.sample(
+            cond=cond_batch,
+            text=final_text_list,
+            duration=duration_tensor,
+            steps=nfe_step_value,
+            cfg_strength=cfg_strength_value,
+            sway_sampling_coef=sway_sampling_coef_value,
+            language_ids=language_ids_tensor,
+            cfg_schedule=cfg_schedule_value,
+            cfg_decay_time=cfg_decay_time_value,
+            reverse=reverse,
+            layered=layered,
+            cfg_strength2=cfg_strength2_value,
+            infer_mode=True,
+        )
 
-            generated = generated.to(torch.float32)
+        if post_processing:
+            generated = audio_post_processing(generated, threshold=2.5, limit=3.5)
+
+        generated = generated.to(torch.float32)
+        
+        generated_waves = []
+        spectrograms = []
+        
+        # Process each item in the batch
+        for i in range(B):
+            duration_i = durations[i]
+            gen_i = generated[i:i+1] # [1, max_duration, num_channels]
+            
             if reverse:
-                generated = generated[:, : duration - ref_audio_len, :]
+                gen_i = gen_i[:, : duration_i - ref_audio_len, :]
             else:
-                generated = generated[:, ref_audio_len:duration, :]
-
-            generated_mel_spec = generated.permute(0, 2, 1)
+                gen_i = gen_i[:, ref_audio_len:duration_i, :]
+                
+            generated_mel_spec = gen_i.permute(0, 2, 1)
+            
             if mel_spec_type_value == "vocos":
                 generated_wave = vocoder.decode(generated_mel_spec).cpu()
             elif mel_spec_type_value == "bigvgan":
@@ -1173,37 +1370,62 @@ def infer_xvoice_droptext_process(
                 generated_wave = generated_wave * rms / target_rms_value
             if loudness_norm:
                 generated_wave = normalize_audio_loudness(generated_wave, target_sample_rate, target_lufs=-23.0)
+            
+            wave_np = generated_wave.squeeze().numpy()
+            
+            if remove_silence_chunk:
+                batch_text = all_batches[i][0].strip()
+                # If the chunk doesn't end with punctuation, trim trailing silence aggressively
+                # If it doesn't start with punctuation, trim leading silence aggressively
+                is_start_punct = re.match(r'^[\W_]', batch_text) is not None
+                is_end_punct = re.search(r'[\W_]$', batch_text) is not None
+                
+                if not (is_start_punct or is_end_punct):
+                    # print("removing silence")
+                    # We trim the chunk to remove extra silence generated by the model
+                    wave_np = remove_silence_for_generated_wav_numpy(wave_np, target_sample_rate, keep_silence=50)
 
-            return generated_wave.squeeze().numpy(), generated_mel_spec[0].cpu().numpy()
+            generated_waves.append(wave_np)
+            spectrograms.append(generated_mel_spec[0].cpu().numpy())
 
-    with ThreadPoolExecutor() as executor:
-        futures = [executor.submit(process_batch, batch_text) for batch_text in gen_text_batches]
-        for future in progress.tqdm(futures) if progress is not None else futures:
-            generated_wave, generated_mel_spec = future.result()
-            generated_waves.append(generated_wave)
-            spectrograms.append(generated_mel_spec)
+    # Group generated_waves back to original gen_text items
+    waves_by_original = [[] for _ in range(len(gen_text))]
+    chunk_idx = 0
+    for text_idx, (text, lang) in enumerate(zip(gen_text, gen_lang)):
+        max_units = max(int(predicted_speed * remaining_seconds * local_speed), 1)
+        gen_text_batches = chunk_text_by_units(text, lang, max_units)
+        for _ in gen_text_batches:
+            waves_by_original[text_idx].append(generated_waves[chunk_idx])
+            chunk_idx += 1
 
-    if not generated_waves:
-        return None, target_sample_rate, None
+    final_waves_per_text = []
+    for chunks_for_text in waves_by_original:
+        if not chunks_for_text:
+            final_waves_per_text.append(None)
+            continue
+            
+        if cross_fade_duration_value <= 0:
+            final_wave = np.concatenate(chunks_for_text)
+        else:
+            final_wave = chunks_for_text[0]
+            for next_wave in chunks_for_text[1:]:
+                cross_fade_samples = int(cross_fade_duration_value * target_sample_rate)
+                cross_fade_samples = min(cross_fade_samples, len(final_wave), len(next_wave))
+                if cross_fade_samples <= 0:
+                    final_wave = np.concatenate([final_wave, next_wave])
+                    continue
+                prev_overlap = final_wave[-cross_fade_samples:]
+                next_overlap = next_wave[:cross_fade_samples]
+                fade_out = np.linspace(1, 0, cross_fade_samples)
+                fade_in = np.linspace(0, 1, cross_fade_samples)
+                cross_faded_overlap = prev_overlap * fade_out + next_overlap * fade_in
+                final_wave = np.concatenate(
+                    [final_wave[:-cross_fade_samples], cross_faded_overlap, next_wave[cross_fade_samples:]]
+                )
+        final_waves_per_text.append(final_wave)
 
-    if cross_fade_duration_value <= 0:
-        final_wave = np.concatenate(generated_waves)
-    else:
-        final_wave = generated_waves[0]
-        for next_wave in generated_waves[1:]:
-            cross_fade_samples = int(cross_fade_duration_value * target_sample_rate)
-            cross_fade_samples = min(cross_fade_samples, len(final_wave), len(next_wave))
-            if cross_fade_samples <= 0:
-                final_wave = np.concatenate([final_wave, next_wave])
-                continue
-            prev_overlap = final_wave[-cross_fade_samples:]
-            next_overlap = next_wave[:cross_fade_samples]
-            fade_out = np.linspace(1, 0, cross_fade_samples)
-            fade_in = np.linspace(0, 1, cross_fade_samples)
-            cross_faded_overlap = prev_overlap * fade_out + next_overlap * fade_in
-            final_wave = np.concatenate(
-                [final_wave[:-cross_fade_samples], cross_faded_overlap, next_wave[cross_fade_samples:]]
-            )
-
-    combined_spectrogram = np.concatenate(spectrograms, axis=1)
-    return final_wave, target_sample_rate, combined_spectrogram
+    combined_spectrogram = np.concatenate(spectrograms, axis=1) if spectrograms else None
+    
+    if len(gen_text) == 1:
+        return final_waves_per_text[0], target_sample_rate, combined_spectrogram
+    return final_waves_per_text, target_sample_rate, combined_spectrogram
