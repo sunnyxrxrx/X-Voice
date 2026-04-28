@@ -98,6 +98,42 @@ layered = False
 cfg_strength2 = 4.0
 cfg_schedule = "square"
 cfg_decay_time = 0.0
+NLLB_MODEL_ID = "facebook/nllb-200-distilled-600M"
+XVOICE_TO_NLLB = {
+    "bg": "bul_Cyrl",
+    "cs": "ces_Latn",
+    "da": "dan_Latn",
+    "de": "deu_Latn",
+    "el": "ell_Grek",
+    "en": "eng_Latn",
+    "es": "spa_Latn",
+    "et": "est_Latn",
+    "fi": "fin_Latn",
+    "fr": "fra_Latn",
+    "hr": "hrv_Latn",
+    "hu": "hun_Latn",
+    "id": "ind_Latn",
+    "it": "ita_Latn",
+    "ja": "jpn_Jpan",
+    "ko": "kor_Hang",
+    "lt": "lit_Latn",
+    "lv": "lvs_Latn",
+    "mt": "mlt_Latn",
+    "nl": "nld_Latn",
+    "pl": "pol_Latn",
+    "pt": "por_Latn",
+    "ro": "ron_Latn",
+    "ru": "rus_Cyrl",
+    "sk": "slk_Latn",
+    "sl": "slv_Latn",
+    "sv": "swe_Latn",
+    "th": "tha_Thai",
+    "vi": "vie_Latn",
+    "zh": "zho_Hans",
+}
+
+_nllb_tokenizer = None
+_nllb_model = None
 
 # -----------------------------------------
 
@@ -923,6 +959,41 @@ def normalize_text_for_lang(text, lang, normalizer_cache):
             normalizer_cache[lang] = TextNormalizer(language=lang)
     with suppress_stdout_stderr():
         return normalizer_cache[lang].normalize(text)
+
+
+def validate_nllb_lang(lang):
+    if lang not in XVOICE_TO_NLLB:
+        raise ValueError(f"NLLB language mapping is missing for '{lang}'.")
+    return XVOICE_TO_NLLB[lang]
+
+
+def get_nllb_translator(device_name=device, show_info=None):
+    global _nllb_tokenizer, _nllb_model
+    if _nllb_tokenizer is None or _nllb_model is None:
+        if show_info is not None:
+            show_info("Loading NLLB translation model...")
+        from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+
+        _nllb_tokenizer = AutoTokenizer.from_pretrained(NLLB_MODEL_ID)
+        _nllb_model = AutoModelForSeq2SeqLM.from_pretrained(NLLB_MODEL_ID).eval().to(device_name)
+    return _nllb_tokenizer, _nllb_model
+
+
+def translate_text_nllb(text, src_lang, tgt_lang, device_name=device, show_info=None):
+    tokenizer, model = get_nllb_translator(device_name=device_name, show_info=show_info)
+    src_nllb = validate_nllb_lang(src_lang)
+    tgt_nllb = validate_nllb_lang(tgt_lang)
+    tokenizer.src_lang = src_nllb
+    inputs = tokenizer(text, return_tensors="pt")
+    inputs = {key: value.to(device_name) for key, value in inputs.items()}
+    forced_bos_token_id = tokenizer.convert_tokens_to_ids(tgt_nllb)
+    with torch.inference_mode():
+        outputs = model.generate(
+            **inputs,
+            forced_bos_token_id=forced_bos_token_id,
+            max_new_tokens=256,
+        )
+    return tokenizer.batch_decode(outputs, skip_special_tokens=True)[0].strip()
 
 
 def prepare_text_tokens(text, tokenizer_name, lang, ipa_tokenizer_getter):

@@ -55,7 +55,6 @@ from x_voice.infer.utils_infer import (
     normalize_lang_code,
     normalize_text_for_lang,
     preprocess_ref_audio_text,
-    translate_text_nllb,
 )
 
 
@@ -80,8 +79,6 @@ STAGE2_REF_TEXT = "X-Voice Stage2 does not need reference text."
 TEXT_MODE_AUTO = "Auto Detect"
 TEXT_MODE_CODESWITCH = "Manual Code-Switch"
 DOMINANT_LANG_AUTO = "Auto Detect"
-APP_MODE_CLONE = "Zero-Shot Voice Cloning"
-APP_MODE_TRANSLATE_CLONE = "Translate & Clone"
 
 HF_REPO_ID = "XRXRX/X-Voice"
 STAGE1_CKPT = "XVoice_Base_Stage1/model_600000.safetensors"
@@ -147,7 +144,6 @@ LANGUAGE_OPTIONS = [
 LANGUAGE_CHOICES = [f"{name}({code})" for name, code in LANGUAGE_OPTIONS]
 DOMINANT_LANGUAGE_CHOICES = [DOMINANT_LANG_AUTO] + LANGUAGE_CHOICES
 LANGUAGE_CODES = {code for _, code in LANGUAGE_OPTIONS}
-LANGUAGE_LABEL_BY_CODE = {code: f"{name}({code})" for name, code in LANGUAGE_OPTIONS}
 CODE_SWITCH_SAMPLE = [
     ("English(en)", "I was planning to go out for dinner, but"),
     ("Mandarin(zh)", "外面好像快下雨了."),
@@ -290,12 +286,6 @@ def parse_dominant_language_choice(language_choice):
     return parse_language_choice(language_choice)
 
 
-def parse_reference_language_choice(language_choice):
-    if not language_choice or language_choice == DOMINANT_LANG_AUTO:
-        return None
-    return parse_language_choice(language_choice)
-
-
 def build_manual_gen_text_spans(dominant_language_choice, segment_values):
     spans = []
     for idx in range(0, len(segment_values), 2):
@@ -338,14 +328,6 @@ def preprocess_stage1_ref(ref_audio, ref_text, show_info=gr.Info):
 def preprocess_stage2_ref(ref_audio, show_info=gr.Info):
     processed_audio, _ = preprocess_ref_audio_text(ref_audio, STAGE2_REF_TEXT, show_info=show_info)
     return processed_audio
-
-
-def preprocess_translate_ref(ref_audio, ref_text, ref_language_choice, show_info=gr.Info):
-    processed_audio, processed_text = preprocess_ref_audio_text(ref_audio, (ref_text or "").strip(), show_info=show_info)
-    ref_lang = parse_reference_language_choice(ref_language_choice) or detect_required_lang(processed_text, "reference text")
-    processed_text = normalize_required_text(processed_text, ref_lang)
-    processed_text = ensure_ref_text_punctuation(processed_text)
-    return processed_audio, processed_text, ref_lang
 
 
 @lru_cache(maxsize=1000)
@@ -456,113 +438,6 @@ def infer(ref_audio, ref_text, text_mode, gen_text, model_choice, dominant_langu
         return gr.update(), ref_text
 
 
-@gpu_decorator
-def translate_and_clone(
-    ref_audio,
-    ref_text,
-    ref_language_choice,
-    text_to_translate,
-    target_language_choices,
-    show_info=gr.Info,
-):
-    empty_results = [], gr.update(choices=[], value=None), "", gr.update(value=None), {}, ref_text
-    if not ref_audio:
-        gr.Warning("Please provide reference audio.")
-        return empty_results
-
-    if not target_language_choices:
-        gr.Warning("Please select at least one target language.")
-        return empty_results
-
-    torch.manual_seed(np.random.randint(0, 2**31 - 1))
-    try:
-        current_vocoder = get_vocoder()
-        runtime = get_stage1_runtime(show_info=show_info)
-        ref_audio, ref_text, ref_lang = preprocess_translate_ref(
-            ref_audio,
-            ref_text,
-            ref_language_choice,
-            show_info=show_info,
-        )
-        if ref_lang not in LANGUAGE_CODES:
-            raise ValueError(f"Reference language '{ref_lang}' is not one of the 30 supported languages.")
-
-        target_langs = []
-        for language_choice in target_language_choices:
-            target_lang = parse_language_choice(language_choice)
-            if target_lang != ref_lang and target_lang not in target_langs:
-                target_langs.append(target_lang)
-
-        if not target_langs:
-            raise ValueError("Please select at least one target language different from the reference language.")
-
-        source_text = text_to_translate.strip() if text_to_translate and text_to_translate.strip() else ref_text
-        source_text = source_text.strip()
-        if not source_text:
-            raise ValueError("Text to translate is empty.")
-
-        results_state = {}
-        table_rows = []
-        for target_lang in target_langs:
-            show_info(f"Translating and cloning: {LANGUAGE_LABEL_BY_CODE[target_lang]}")
-            translated_text = translate_text_nllb(source_text, ref_lang, target_lang, device_name=device, show_info=show_info)
-            translated_text = normalize_required_text(translated_text, target_lang)
-            final_wave, final_sample_rate, _ = infer_xvoice_process(
-                ref_audio,
-                ref_text,
-                [translated_text],
-                ref_lang,
-                [[(target_lang, translated_text)]],
-                runtime["tokenizer"],
-                runtime["ipa_tokenizer_getter"],
-                runtime["model"],
-                current_vocoder,
-                runtime["lang_to_id_map"],
-                dominant_lang=[target_lang],
-                srp_model=None,
-                mel_spec_type_value=VOCODER_NAME,
-                progress=gr.Progress(),
-                target_rms_value=TARGET_RMS,
-                cross_fade_duration_value=CROSS_FADE_DURATION,
-                nfe_step_value=NFE_STEP,
-                cfg_strength_value=CFG_STRENGTH,
-                cfg_strength2_value=CFG_STRENGTH2,
-                cfg_schedule_value=CFG_SCHEDULE,
-                cfg_decay_time_value=CFG_DECAY_TIME,
-                sway_sampling_coef_value=SWAY_SAMPLING_COEF,
-                local_speed=SPEED,
-                fix_duration_value=FIX_DURATION,
-                sp_type="syllable",
-                reverse=REVERSE,
-                denoise_ref=DENOISE_REF,
-                loudness_norm=LOUDNESS_NORM,
-                post_processing=POST_PROCESSING,
-                device_name=device,
-            )
-            label = LANGUAGE_LABEL_BY_CODE[target_lang]
-            audio = (final_sample_rate, final_wave)
-            results_state[label] = {
-                "lang": target_lang,
-                "text": translated_text,
-                "audio": audio,
-            }
-            table_rows.append([label, translated_text])
-
-        first_label = next(iter(results_state))
-        first_result = results_state[first_label]
-        return (
-            table_rows,
-            gr.update(choices=list(results_state.keys()), value=first_label),
-            first_result["text"],
-            first_result["audio"],
-            results_state,
-            ref_text,
-        )
-    except Exception as exc:
-        gr.Warning(str(exc))
-        return empty_results
-
-
 def switch_model(model_choice, current_ref_text):
     if model_choice == STAGE2_MODEL:
         return gr.update(value=STAGE2_REF_TEXT, interactive=False)
@@ -580,31 +455,6 @@ def switch_text_mode(text_mode):
         gr.update(visible=text_mode == TEXT_MODE_AUTO),
         gr.update(visible=text_mode == TEXT_MODE_CODESWITCH),
     )
-
-
-def switch_app_mode(app_mode):
-    return (
-        gr.update(visible=app_mode == APP_MODE_CLONE),
-        gr.update(visible=app_mode == APP_MODE_TRANSLATE_CLONE),
-    )
-
-
-def select_all_target_languages(ref_language_choice):
-    ref_lang = parse_reference_language_choice(ref_language_choice)
-    return gr.update(
-        value=[
-            language_choice
-            for language_choice in LANGUAGE_CHOICES
-            if parse_language_choice(language_choice) != ref_lang
-        ]
-    )
-
-
-def preview_translate_result(results_state, preview_label):
-    if not results_state or not preview_label or preview_label not in results_state:
-        return "", gr.update(value=None)
-    result = results_state[preview_label]
-    return result["text"], result["audio"]
 
 
 def add_code_switch_segment(current_count):
@@ -657,128 +507,68 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
 """
     )
 
-    app_mode_input = gr.Radio(
-        choices=[APP_MODE_CLONE, APP_MODE_TRANSLATE_CLONE],
-        value=APP_MODE_CLONE,
-        label="Mode",
-    )
-
-    with gr.Group(visible=True) as clone_panel:
-        with gr.Row():
-            with gr.Column(scale=1):
-                choose_model = gr.Radio(
-                    choices=[STAGE1_MODEL, STAGE2_MODEL],
-                    label="Choose Model",
-                    value=STAGE1_MODEL,
-                )
-                ref_audio_input = gr.Audio(label="Reference Audio", type="filepath")
-                ref_text_input = gr.Textbox(
-                    label="Reference Text",
-                    lines=3,
-                    placeholder="Optional for Stage1. Leave empty to transcribe with Whisper.",
-                )
-                text_mode_input = gr.Radio(
-                    choices=[TEXT_MODE_AUTO, TEXT_MODE_CODESWITCH],
-                    label="Text to Generate",
-                    value=TEXT_MODE_AUTO,
-                )
-                gen_text_input = gr.Textbox(label="Text", lines=8)
-                code_switch_count = gr.State(3)
-                code_switch_rows = []
-                code_switch_inputs = []
-                with gr.Column(visible=False) as code_switch_panel:
-                    dominant_language_input = gr.Dropdown(
-                        choices=DOMINANT_LANGUAGE_CHOICES,
-                        value=DOMINANT_LANG_AUTO,
-                        allow_custom_value=True,
-                        label="Dominant Language",
-                    )
-                    for idx in range(MAX_CODE_SWITCH_SEGMENTS):
-                        with gr.Row(visible=idx < 3) as code_switch_row:
-                            language_input = gr.Dropdown(
-                                choices=LANGUAGE_CHOICES,
-                                value="English(en)",
-                                allow_custom_value=True,
-                                label=f"Language {idx + 1}",
-                                scale=1,
-                            )
-                            segment_input = gr.Textbox(
-                                label=f"Segment {idx + 1}",
-                                lines=2,
-                                scale=3,
-                            )
-                        code_switch_rows.append(code_switch_row)
-                        code_switch_inputs.extend([language_input, segment_input])
-                    with gr.Row():
-                        add_segment_btn = gr.Button("+")
-                        remove_segment_btn = gr.Button("-")
-                        code_switch_sample_btn = gr.Button("Code-Switch Sample")
-                generate_btn = gr.Button("Synthesize", variant="primary")
-
-            with gr.Column(scale=1):
-                audio_output = gr.Audio(label="Generated Audio")
-                gr.Examples(
-                    examples=[
-                        [EXAMPLE_REF_EN, "Some call me nature, others call me mother nature."],
-                        [EXAMPLE_REF_ZH, "对，这就是我，万人敬仰的太乙真人。"],
-                    ],
-                    inputs=[ref_audio_input, ref_text_input],
-                    label="Example Prompts",
-                )
-
-    with gr.Group(visible=False) as translate_panel:
-        translate_results_state = gr.State({})
-        with gr.Row():
-            with gr.Column(scale=1):
-                translate_ref_audio_input = gr.Audio(label="Reference Audio", type="filepath")
-                translate_ref_text_input = gr.Textbox(
-                    label="Reference Text",
-                    lines=3,
-                    placeholder="Optional. Leave empty to transcribe with Whisper.",
-                )
-                translate_ref_language_input = gr.Dropdown(
+    with gr.Row():
+        with gr.Column(scale=1):
+            choose_model = gr.Radio(
+                choices=[STAGE1_MODEL, STAGE2_MODEL],
+                label="Choose Model",
+                value=STAGE1_MODEL,
+            )
+            ref_audio_input = gr.Audio(label="Reference Audio", type="filepath")
+            ref_text_input = gr.Textbox(
+                label="Reference Text",
+                lines=3,
+                placeholder="Optional for Stage1. Leave empty to transcribe with Whisper.",
+            )
+            text_mode_input = gr.Radio(
+                choices=[TEXT_MODE_AUTO, TEXT_MODE_CODESWITCH],
+                label="Text to Generate",
+                value=TEXT_MODE_AUTO,
+            )
+            gen_text_input = gr.Textbox(label="Text", lines=8)
+            code_switch_count = gr.State(3)
+            code_switch_rows = []
+            code_switch_inputs = []
+            with gr.Column(visible=False) as code_switch_panel:
+                dominant_language_input = gr.Dropdown(
                     choices=DOMINANT_LANGUAGE_CHOICES,
                     value=DOMINANT_LANG_AUTO,
                     allow_custom_value=True,
-                    label="Reference Language",
+                    label="Dominant Language",
                 )
-                translate_text_input = gr.Textbox(
-                    label="Text to Translate",
-                    lines=5,
-                    placeholder="Optional. Leave empty to translate the reference text.",
-                )
-                target_languages_input = gr.CheckboxGroup(
-                    choices=LANGUAGE_CHOICES,
-                    label="Target Languages",
-                )
+                for idx in range(MAX_CODE_SWITCH_SEGMENTS):
+                    with gr.Row(visible=idx < 3) as code_switch_row:
+                        language_input = gr.Dropdown(
+                            choices=LANGUAGE_CHOICES,
+                            value="English(en)",
+                            allow_custom_value=True,
+                            label=f"Language {idx + 1}",
+                            scale=1,
+                        )
+                        segment_input = gr.Textbox(
+                            label=f"Segment {idx + 1}",
+                            lines=2,
+                            scale=3,
+                        )
+                    code_switch_rows.append(code_switch_row)
+                    code_switch_inputs.extend([language_input, segment_input])
                 with gr.Row():
-                    select_all_targets_btn = gr.Button("Generate All Languages")
-                    translate_clone_btn = gr.Button("Translate & Clone", variant="primary")
+                    add_segment_btn = gr.Button("+")
+                    remove_segment_btn = gr.Button("-")
+                    code_switch_sample_btn = gr.Button("Code-Switch Sample")
+            generate_btn = gr.Button("Synthesize", variant="primary")
 
-            with gr.Column(scale=1):
-                translate_results_table = gr.Dataframe(
-                    headers=["Language", "Translated Text"],
-                    datatype=["str", "str"],
-                    row_count=(0, "dynamic"),
-                    col_count=(2, "fixed"),
-                    label="Results Table",
-                )
-                preview_language_input = gr.Dropdown(
-                    choices=[],
-                    value=None,
-                    label="Preview Language",
-                )
-                preview_translated_text = gr.Textbox(
-                    label="Translated Text",
-                    lines=5,
-                )
-                preview_audio_output = gr.Audio(label="Generated Audio")
+        with gr.Column(scale=1):
+            audio_output = gr.Audio(label="Generated Audio")
+            gr.Examples(
+                examples=[
+                    [EXAMPLE_REF_EN, "Some call me nature, others call me mother nature."],
+                    [EXAMPLE_REF_ZH, "对，这就是我，万人敬仰的太乙真人。"],
+                ],
+                inputs=[ref_audio_input, ref_text_input],
+                label="Example Prompts",
+            )
 
-    app_mode_input.change(
-        switch_app_mode,
-        inputs=[app_mode_input],
-        outputs=[clone_panel, translate_panel],
-    )
     choose_model.change(
         switch_model,
         inputs=[choose_model, ref_text_input],
@@ -814,34 +604,6 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
             dominant_language_input,
         ] + code_switch_inputs,
         outputs=[audio_output, ref_text_input],
-    )
-    select_all_targets_btn.click(
-        select_all_target_languages,
-        inputs=[translate_ref_language_input],
-        outputs=[target_languages_input],
-    )
-    translate_clone_btn.click(
-        translate_and_clone,
-        inputs=[
-            translate_ref_audio_input,
-            translate_ref_text_input,
-            translate_ref_language_input,
-            translate_text_input,
-            target_languages_input,
-        ],
-        outputs=[
-            translate_results_table,
-            preview_language_input,
-            preview_translated_text,
-            preview_audio_output,
-            translate_results_state,
-            translate_ref_text_input,
-        ],
-    )
-    preview_language_input.change(
-        preview_translate_result,
-        inputs=[translate_results_state, preview_language_input],
-        outputs=[preview_translated_text, preview_audio_output],
     )
 
 
