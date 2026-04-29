@@ -139,6 +139,7 @@ pre-commit run --all-files
 
 - [F5-TTS](https://arxiv.org/abs/2410.06885) brilliant work and the foundation of this codebase
 - Cross-Lingual F5-TTS 2 for its supervised fine-tuning strategy with synthetic audio prompts
+- [Cross-Lingual F5-TTS](https://arxiv.org/abs/2509.14579) for its speaking rate predictor
 - [NLLB](https://huggingface.co/facebook/nllb-200-distilled-600M) for translation in the Gradio demo
 - [torchdiffeq](https://github.com/rtqichen/torchdiffeq) as ODE solver, [Vocos](https://huggingface.co/charactr/vocos-mel-24khz) and [BigVGAN](https://github.com/NVIDIA/BigVGAN) as vocoder
 - [FunASR](https://github.com/modelscope/FunASR), [faster-whisper](https://github.com/SYSTRAN/faster-whisper), [UniSpeech](https://github.com/microsoft/UniSpeech), [SpeechMOS](https://github.com/tarepan/SpeechMOS) for evaluation tools
