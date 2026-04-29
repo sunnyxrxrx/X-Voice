@@ -1,55 +1,127 @@
-# Training
+# SRP Training
+
+This folder trains the multilingual Speed Rate Predictor (SRP) used by X-Voice Stage2 duration prediction.
+
 ## Prepare Dataset
-Download corresponding dataset first, and fill in the path in scripts.
 
-```bash
-# Prepare the Emilia dataset
-python src/train/datasets/prepare_emilia_speed.py
+Download the X-Voice training dataset from [Hugging Face](https://huggingface.co/datasets/XRXRX/X-Voice-Dataset-Train).
+
+The SRP preprocessing script follows the same X-Voice dataset layout used by `src/x_voice/train/README.md`:
+
+```text
+x_voice/
+├── wavs/
+│   ├── bg/
+│   ├── ...
+│   └── zh/
+└── csvs_stage2/
+    ├── metadata_bg_voxpopuli.csv
+    ├── ...
+    └── metadata_zh_emilia.csv
 ```
 
-
-## Training & Finetuning
-
-Once your datasets are prepared, you can start the training process.
-
-### 1. Training script used for pretrained model
+Prepare SRP data:
 
 ```bash
-# setup accelerate config, e.g. use multi-gpu ddp, fp16
-# will be to: ~/.cache/huggingface/accelerate/default_config.yaml     
+python src/srp/train/datasets/prepare_multilingual_speed.py \
+  --inp_dir /path/to/x_voice \
+  --dataset_name multilingual_250_100
+```
+
+The script reads:
+
+```text
+/path/to/x_voice/csvs_stage2/metadata_*.csv
+/path/to/x_voice/wavs/...
+```
+
+It writes:
+
+```text
+data/multilingual_250_100_srp/
+├── raw.arrow
+├── raw_val.arrow
+├── duration.json
+├── duration_val.json
+├── speed_syllables_counts_train.json
+└── speed_syllables_hist_train.png
+```
+
+`--dataset_name` should match the dataset name used in the SRP config. The prepare script appends `_srp` to the output folder name.
+
+## Configure Training
+
+The default config is:
+
+```text
+src/srp/configs/SpeedPredict_Multilingual.yaml
+```
+
+Important fields:
+
+| Field | Meaning |
+| --- | --- |
+| `datasets.name` | SRP dataset name, for example `multilingual_250_100` |
+| `datasets.batch_size_per_gpu` | frame/sample budget per GPU |
+| `model.loss` | `GCE` or `CE` |
+| `model.mel_spec` | mel configuration; should match X-Voice inference |
+| `ckpts.save_dir` | checkpoint output directory |
+| `ckpts.logger` | `wandb`, `tensorboard`, or `null` |
+
+If your prepared dataset name is different, override it when launching:
+
+```bash
+++datasets.name=your_dataset_name
+```
+
+## Training
+
+Set up accelerate first:
+
+```bash
 accelerate config
-
-# .yaml files are under src/f5_tts/configs directory
-accelerate launch src/train/train.py --config-name SpeedPredict_Base.yaml
-
-# possible to overwrite accelerate and hydra config
-accelerate launch --mixed_precision=fp16 src/train/train.py --config-name SpeedPredict_Base.yaml ++datasets.batch_size_per_gpu=19200
 ```
 
-### 2. W&B Logging
+Launch training:
 
-The `wandb/` dir will be created under path you run training/finetuning scripts.
-
-By default, the training script does NOT use logging (assuming you didn't manually log in using `wandb login`).
-
-To turn on wandb logging, you can either:
-
-1. Manually login with `wandb login`: Learn more [here](https://docs.wandb.ai/ref/cli/wandb-login)
-2. Automatically login programmatically by setting an environment variable: Get an API KEY at https://wandb.ai/authorize and set the environment variable as follows:
-
-On Mac & Linux:
-
-```
-export WANDB_API_KEY=<YOUR WANDB API KEY>
+```bash
+accelerate launch src/srp/train/train.py \
+  --config-name SpeedPredict_Multilingual.yaml
 ```
 
-On Windows:
+Override config values if needed:
 
+```bash
+accelerate launch --mixed_precision=fp16 src/srp/train/train.py \
+  --config-name SpeedPredict_Multilingual.yaml \
+  ++datasets.name=multilingual_250_100 \
+  ++datasets.batch_size_per_gpu=19200
 ```
-set WANDB_API_KEY=<YOUR WANDB API KEY>
-```
-Moreover, if you couldn't access W&B and want to log metrics offline, you can set the environment variable as follows:
 
+Checkpoints are saved under:
+
+```text
+ckpts/${model.name}_${datasets.name}_${model.loss}/...
 ```
+
+## W&B Logging
+
+The `wandb/` directory will be created under the path where you run the training script.
+
+By default, logging depends on `ckpts.logger` in the config. To use W&B, log in manually:
+
+```bash
+wandb login
+```
+
+Or set an API key:
+
+```bash
+export WANDB_API_KEY=<YOUR_WANDB_API_KEY>
+```
+
+For offline logging:
+
+```bash
 export WANDB_MODE=offline
 ```

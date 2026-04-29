@@ -39,8 +39,8 @@ def map_to_class(speed: float, delta: float = 0.25) -> float:
 
 
 def read_all_metadata(input_dir: str):
-    input_path = Path(input_dir) / "csv_stage2_debug"
-    csv_files = list(input_path.glob("metadata_*_test.csv"))
+    input_path = Path(input_dir) / "csvs_stage2"
+    csv_files = list(input_path.glob("metadata_*.csv"))
 
     if not csv_files:
         print(f"No proper csv files found in {input_dir}")
@@ -166,9 +166,9 @@ def write_speed_syllables_stats(out_dir: Path, split_name: str, rows, write_hist
         plt.close()
 
 
-def prepare_all(inp_dir: str, root_dir: str, out_dir_root: str, dataset_name: str, seed: int = 42):
+def prepare_all(inp_dir: str, out_dir_root: str, dataset_name: str, seed: int = 42):
     inp_dir = Path(inp_dir)
-    root_dir = Path(root_dir)
+    root_dir = inp_dir / "wavs"
     out_dir_root = Path(out_dir_root)
     out_dir = Path(f"{out_dir_root / dataset_name}_srp")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -221,8 +221,8 @@ def main():
     parser.add_argument(
         "--inp_dir",
         type=str,
-        default="/inspire/hdd/project/embodied-multimodality/chenxie-25019/qingyuliu/datasets",
-        help="Root dir containing csv_train/metadata_*_full.csv",
+        required=True,
+        help="Root dir containing csvs_stage2/metadata_*.csv and wavs/",
     )
     parser.add_argument(
         "--out_dir",
@@ -230,17 +230,11 @@ def main():
         default=str(Path(__file__).resolve().parents[4] / "data"),
         help="Output root dir for SRP data",
     )
-    parser.add_argument(
-        "--root_dir",
-        type=str,
-        default="/inspire/hdd/project/embodied-multimodality/chenxie-25019/rixixu/datasets/wavs",
-        help="Root dir containing audio files referenced by metadata",
-    )
-    parser.add_argument("--dataset_name", type=str, default="multilingual_qyl_test")
+    parser.add_argument("--dataset_name", type=str, default="multilingual_250_100")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    prepare_all(args.inp_dir, args.root_dir, args.out_dir, args.dataset_name, args.seed)
+    prepare_all(args.inp_dir, args.out_dir, args.dataset_name, args.seed)
 
 
 if __name__ == "__main__":

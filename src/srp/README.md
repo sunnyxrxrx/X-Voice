@@ -1,33 +1,114 @@
 # Speaking Rate Predictor
-Speaking Rate Predictor for [Cross-Lingual F5-TTS](https://arxiv.org/abs/2509.14579)
 
-## Installation
-This module is built upon the **F5-TTS** environment. 
+Speaking Rate Predictor (SRP) is the duration helper used by X-Voice Stage2, following [Cross-Lingual F5-TTS](https://arxiv.org/abs/2509.14579).
 
-1. Ensure you have the F5-TTS environment set up (refer to the main repository [F5-TTS repo](https://github.com/SWivid/F5-TTS/)).
-2. Install the additional dependency:
+X-Voice Stage1 has reference text, so inference can estimate generation length from the reference text/audio ratio. X-Voice Stage2 drops reference text, so it uses SRP to predict the prompt speaking rate from the reference audio and then estimates the target duration from the generated text.
 
-```bash
-pip install pyphen
-pip install pykakasi
-pip install python-crfsuite
-pip install num2words
-pip install finnsyll
+## What SRP Does
+
+SRP takes reference audio and predicts a speaking-rate bucket. During X-Voice Stage2 inference, this predicted speed is used to:
+
+- split long target text into reasonable chunks,
+- estimate each generated chunk duration,
+- keep drop-text inference stable without requiring reference text.
+
+## Files
+
+```text
+src/srp/
+├── configs/
+│   └── SpeedPredict_Multilingual.yaml
+├── model/
+│   ├── speed_predictor.py
+│   ├── dataset.py
+│   └── utils.py
+└── train/
+    ├── README.md
+    ├── train.py
+    └── datasets/
+        └── prepare_multilingual_speed.py
 ```
 
-## Data Augmentation: Silence Injection
-During training, silence is randomly inserted into audio samples to improve generalization. The target speed label remains unchanged.
+Key files:
 
-- **Batch-Level Gate**: with probability `1 - p`, the whole batch gets no silence; with probability `p`, the whole batch gets silence.
-- **Shared Silence Length**: when enabled, one silence ratio is sampled from `silence_ratio_min ~ silence_ratio_max` (default `0.2 ~ 0.8`) and converted to a shared frame count `sil_len` using the longest sample length in the batch.
-- **Per-Sample Placement** (continuous random split):
-  - For each sample, draw an integer `front_len` uniformly from `[0, sil_len]`, then set `back_len = sil_len - front_len`.
-  - Silence is added as `front_len` at the start and `back_len` at the end, so total injected frames per sample is always `sil_len`.
+| File | Purpose |
+| --- | --- |
+| `configs/SpeedPredict_Multilingual.yaml` | Default SRP training config |
+| `model/speed_predictor.py` | SpeedPredictor model and `predict_speed()` |
+| `model/dataset.py` | Loads prepared SRP Arrow data |
+| `model/utils.py` | Language and syllable-count helpers |
+| `train/datasets/prepare_multilingual_speed.py` | Builds SRP training data from the X-Voice dataset |
+| `train/train.py` | SRP training entry point |
 
-## Using the Speaking Rate Predictor to Evaluate F5-TTS
-The script for predicting duration using the Speaking Rate Predictor to assist F5-TTS inference has been uploaded to the forked repository: [QingyuLiu0521/F5-TTS/src/f5_tts/eval/eval_infer_batch_droptext_sp.py](https://github.com/QingyuLiu0521/F5-TTS/blob/c11cb40706d90f713dc93b297cc72f8d73edfa16/src/f5_tts/eval/eval_infer_batch_droptext_sp.py).
+## Dataset
 
-### Example Usage:
-```bash
-accelerate launch src/f5_tts/eval/eval_infer_batch.py -s 0 -n "F5TTS_v1_Base" -c 1250000 -t "ls_pc_test_clean" -nfe 32 -ns "SpeedPredict_Base" -cs 20000 --local
+SRP uses the X-Voice training dataset: [XRXRX/X-Voice-Dataset-Train](https://huggingface.co/datasets/XRXRX/X-Voice-Dataset-Train)
+
+The expected input layout is the same X-Voice dataset layout used by [src/x_voice/train/README.md](../../src/x_voice/train/README.md):
+
+```text
+x_voice/
+├── wavs/
+└── csvs_stage2/
+    ├── metadata_bg_voxpopuli.csv
+    ├── ...
+    └── metadata_zh_emilia.csv
 ```
+
+Prepare SRP data:
+
+```bash
+python src/srp/train/datasets/prepare_multilingual_speed.py \
+  --inp_dir /path/to/x_voice \
+  --dataset_name multilingual_250_100
+```
+
+This writes:
+
+```text
+data/multilingual_250_100_srp/
+```
+
+## Training
+
+Train with the default config:
+
+```bash
+accelerate launch src/srp/train/train.py \
+  --config-name SpeedPredict_Multilingual.yaml
+```
+
+If your prepared dataset name is different:
+
+```bash
+accelerate launch src/srp/train/train.py \
+  --config-name SpeedPredict_Multilingual.yaml \
+  ++datasets.name=your_dataset_name
+```
+
+For full preprocessing and training details, see:
+
+```text
+src/srp/train/README.md
+```
+
+## Inference
+
+X-Voice Stage2 inference loads an SRP checkpoint through:
+
+```text
+src/x_voice/infer/infer_cli_stage2.py
+src/x_voice/infer/infer_gradio.py
+```
+
+For CLI inference, set `srp_ckpt_file` in the Stage2 TOML file or pass it with a command-line flag.
+
+For Gradio inference, the default SRP checkpoint is downloaded automatically from [XRXRX/X-Voice](https://huggingface.co/XRXRX/X-Voice)
+
+Default SRP checkpoint path in the Hugging Face repo:
+
+```text
+SpeedPredictor/model_28000.safetensors
+```
+
+See the X-Voice inference [README](../../src/x_voice/infer/README.md) for Stage2 usage.
