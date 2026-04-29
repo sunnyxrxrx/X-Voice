@@ -755,6 +755,17 @@ BUTTON_CSS = """
     color: #ffffff !important;
 }
 
+.orange-button {
+    --button-primary-background-fill: #f97316 !important;
+    --button-primary-background-fill-hover: #ea580c !important;
+    --button-primary-border-color: #ea580c !important;
+    --button-primary-text-color: #ffffff !important;
+    --button-secondary-background-fill: #f97316 !important;
+    --button-secondary-background-fill-hover: #ea580c !important;
+    --button-secondary-border-color: #ea580c !important;
+    --button-secondary-text-color: #ffffff !important;
+}
+
 .orange-button button:hover {
     background: #ea580c !important;
     border-color: #c2410c !important;
@@ -856,8 +867,8 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown(
-                    "Translate the reference text with NLLB-200 0.6B, edit the translated text if needed, "
-                    "then clone the reference voice in the selected target languages.",
+                    "**Translate the reference text with NLLB-200 0.6B, edit the translated text if needed, "
+                    "then clone the reference voice in the selected target languages.**",
                     elem_classes=["plain-markdown"],
                 )
                 translate_ref_audio_input = gr.Audio(label="Reference Audio", type="filepath")
