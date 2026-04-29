@@ -18,12 +18,8 @@ from x_voice.model.utils import convert_char_to_pinyin, str_to_list_ipa_all
 from x_voice.eval.text_normalizer import TextNormalizer
 from x_voice.infer.utils_infer import denoise_ref_audio
 import pickle
-import pyphen
-import unicodedata
-from pythainlp.tokenize import syllable_tokenize
-from MAVL.process_syllable.japanese import split_syllables as ja_split_syllables
-from finnsyll import FinnSyll
-import pyloudnorm as pyln
+from srp.model.utils import count_syllables
+
 
 def get_testset_metainfo(data_dir, in_language, ref_language=None, drop_text=False, use_truth_duration=False):
     """
@@ -146,112 +142,6 @@ def padded_mel_batch(ref_mels):
 
 
 # get prompts from metainfo containing: utt, prompt_text, prompt_wav, gt_text, gt_wav
-# copied from SpeakingRatePredictor/src/model/utils.py
-PYPHEN_LANG_MAP = {
-    "bg": "bg_BG",
-    "cs": "cs_CZ",
-    "da": "da_DK",
-    "de": "de_DE",
-    "el": "el_GR",
-    "en": "en_US",
-    "es": "es_ES",
-    "et": "et_EE",
-    "fi": "fi_FI",
-    "fr": "fr_FR",
-    "hr": "hr_HR",
-    "hu": "hu_HU",
-    "id": "id_ID",
-    "it": "it_IT",
-    "lt": "lt_LT",
-    "lv": "lv_LV",
-    "mt": "it_IT",  # pyphen has no Maltese package, so Italian is used as a fallback.
-    "nl": "nl_NL",
-    "nl": "nl_NL",
-    "pl": "pl_PL",
-    "pt": "pt_PT",
-    "ro": "ro_RO",
-    "ru": "ru_RU",
-    "sk": "sk_SK",
-    "sl": "sl_SI",
-    "sv": "sv_SE",
-}
-
-_PYPHEN_CACHE = {}
-
-def extract_pyphen_text(text: str) -> str:
-    text = unicodedata.normalize("NFKC", text)
-    tokens = re.findall(r"[^\W\d_]+(?:['’][^\W\d_]+)*", text, flags=re.UNICODE)
-    return " ".join(tokens)
-
-def count_syllables(text: str, lang: str) -> int:
-    if not text:
-        return 0
-
-    if lang in {"zh", "yue"}:
-        return len(re.findall(r"[\u4e00-\u9fff]", text))
-
-    if lang == "ko":
-        return len(re.findall(r"[\uac00-\ud7a3]", text))
-
-    if lang == "th":
-        clean_text = "".join(
-            ch
-            for ch in text
-            if unicodedata.category(ch)[0] in {"L", "M"} or ch.isspace()
-        )
-        try:
-            tokens = syllable_tokenize(clean_text)
-            return len(tokens) if tokens else 0
-        except Exception as e:
-            print(f"Failed to process {text}\n{e}")
-            return 0
-
-    if lang == "ja":
-        _, count = ja_split_syllables(text)
-        return count
-
-    if lang == "vi":
-        text = unicodedata.normalize("NFKC", text)
-        tokens = re.findall(r"[^\W\d_]+(?:['’][^\W\d_]+)*", text, flags=re.UNICODE)
-        return len(tokens)
-
-    clean_text = extract_pyphen_text(text)
-    if not clean_text:
-        return 0
-
-    pyphen_lang = PYPHEN_LANG_MAP.get(lang, "en_US")
-    if pyphen_lang not in _PYPHEN_CACHE:
-        try:
-            if lang == "fi":
-                _PYPHEN_CACHE[pyphen_lang] = FinnSyll()
-            else:
-                _PYPHEN_CACHE[pyphen_lang] = pyphen.Pyphen(lang=pyphen_lang)
-        except Exception as e:
-            print(f"Not support {lang}. Fall back to English.")
-            if "en_US" not in _PYPHEN_CACHE:
-                _PYPHEN_CACHE["en_US"] = pyphen.Pyphen(lang="en_US")
-            pyphen_lang = "en_US"
-    dic = _PYPHEN_CACHE[pyphen_lang]
-    total = 0
-    for word in clean_text.split():
-        if word.strip():
-            if lang == "fi":
-                total += len(dic.syllabify(word)[0].split('.'))
-            else:
-                total += len(dic.inserted(word).split("-"))
-    return total
-
-def count_syllables_(text: str, lang: str) -> int:
-    def count_punctuations(text):
-        punct_chars = set(',.?!;:。，、！？；：')
-        punct_syllables = 0
-        for char in text:
-            if char in punct_chars:
-                punct_syllables += 1
-        return punct_syllables
-    return count_syllables(text, lang) + count_punctuations(text)
-
-
 def get_inference_prompt(
     metainfo,
     speed=1.0,
@@ -280,7 +170,6 @@ def get_inference_prompt(
     ref_language=None,
     ref_ipa_tokenizer=None,
     denoise_ref_wav=False,
-    loudness_norm=False,
 ):
     prompts_all = []
 
@@ -371,7 +260,7 @@ def get_inference_prompt(
                 ref_text_tokenized.append(" ")
             elif len(gen_text_tokenized[-1].encode("utf-8")) == 1 and reverse:
                 gen_text_tokenized.append(" ")
-            if random.random()<0.001:
+            if random.random() < 0.001:
                 print(f"==========\nprompt text tokenized: {ref_text_tokenized}\ntarget text tokenized:{gen_text_tokenized}\n==========")
             
             curr_ref_len = len(ref_text_tokenized) if not drop_text else 0
@@ -404,7 +293,7 @@ def get_inference_prompt(
             else:
                 if sp_type == "pretrained":
                     assert model_sp is not None
-                    gt_num_unit = count_syllables_(gt_text, language)
+                    gt_num_unit = count_syllables(gt_text, language)
                     ref_mel_t = ref_mel.unsqueeze(0).permute(0, 2, 1)
                     ref_mel_tensor = ref_mel_t.to(device)
                     ref_mel_len_tensor = torch.tensor([ref_mel_len], dtype=torch.long).to(device)
@@ -419,10 +308,10 @@ def get_inference_prompt(
                     
                 elif sp_type == "syllable":
                     if ref_language:
-                        ref_syllables = count_syllables_(prompt_text, ref_language)
+                        ref_syllables = count_syllables(prompt_text, ref_language)
                     else:
-                        ref_syllables = count_syllables_(prompt_text, language)
-                    gen_syllables = count_syllables_(gt_text, language)
+                        ref_syllables = count_syllables(prompt_text, language)
+                    gen_syllables = count_syllables(gt_text, language)
                     if ref_syllables == 0:
                         ref_syllables = 1
                     gen_mel_len = int(ref_mel_len * (gen_syllables / ref_syllables) / speed)

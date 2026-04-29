@@ -2,6 +2,7 @@ import os
 import re
 import argparse
 import pandas as pd
+import json
 
 
 def parse_args():
@@ -18,13 +19,13 @@ def main():
     ref_set = None
     if args.ref_set:
         ref_set = args.ref_set.split()
-        summary_file = os.path.join(decode_dir, "summary_results_cross.csv")
-    else:
-        summary_file = os.path.join(decode_dir, "summary_results.csv")
+        assert len(ref_set) == len(test_set), f"The number of languages in ref_set ({len(ref_set)}) must equal that in test_set ({len(test_set)})!"
+    summary_file = os.path.join(decode_dir, "summary_results.csv")
 
     results = []
     print("collecting")
     for i, lang in enumerate(test_set):
+        ref_lang = None
         if ref_set:
             ref_lang = ref_set[i]
             lang_path = os.path.join(decode_dir, f"{ref_lang}-{lang}")
@@ -32,7 +33,10 @@ def main():
                 lang_path = os.path.join(decode_dir, f"{ref_lang}_{lang}")
         else:
             lang_path = os.path.join(decode_dir, lang)
-        row = {"Language": lang, "WER": "N/A", "SIM": "N/A", "UTMOS": "N/A", "DNSMOS": "N/A"}
+        if not os.path.exists(lang_path):
+            print(f"Warning: directory for language {lang} not found at {lang_path}, skipping.")
+            continue
+        row = {"Language": f"{ref_lang}-{lang}" if ref_lang else lang, "WER": "N/A", "SIM": "N/A", "UTMOS": "N/A", "DNSMOS": "N/A"}
         
         # Parse WER
         wer_file = os.path.join(lang_path, "wav_res_ref_text.wer")

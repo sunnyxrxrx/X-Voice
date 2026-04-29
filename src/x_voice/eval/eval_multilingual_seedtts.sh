@@ -1,11 +1,11 @@
 # bash src/x_voice/eval/eval_multilingual_seedtts.sh
-num_gpus=8
+num_gpus=1
 task=zero_shot
 dataset=seedtts_testset
 ckpt=70000
-exp_name=F5TTS_v1_Base_multilingual_full_catada_sft_v2
+exp_name=XVoice_Base_Stage2
 test_set="zh en"
-drop_text=True
+drop_text=True # set True for stage 2 model, False for stage 1 model
 
 
 seed=0
@@ -19,7 +19,7 @@ cfg_schedule=square
 cfg_decay_time=0.6
 cfg_strength=2.5
 decoupled=True
-cfg_strength2=4.0 # if decouple is set False, "cfg_strength" will be ignored
+cfg_strength2=4.0 # if decouple is set False, "cfg_strength2" will be ignored
 reverse=False
 
 

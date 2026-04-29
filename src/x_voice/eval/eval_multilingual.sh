@@ -2,11 +2,11 @@
 num_gpus=1
 task=zero_shot
 dataset=x_voice_eval # lemas_eval
-exp_name=F5TTS_v1_Base_multilingual_full_catada_sft_v2
+exp_name=XVoice_Base_Stage2
 ckpt=70000
-drop_text=True
-test_set="cs"
-# ref_set="en it zh ru ko en ko ru zh it"
+drop_text=True # set True for stage 2 model, False for stage 1 model
+test_set="it zh ru ko en ko ru zh it en"
+ref_set="en it zh ru ko en ko ru zh it"
 
 seed=0
 nfe=16
@@ -19,7 +19,7 @@ cfg_schedule=square
 cfg_decay_time=0.6
 cfg_strength=2.5
 decoupled=True
-cfg_strength2=4.0 # if decouple is set False, "cfg_strength" will be ignored
+cfg_strength2=4.0 # if decouple is set False, "cfg_strength2" will be ignored
 reverse=False
 
 
