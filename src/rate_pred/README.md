@@ -8,7 +8,6 @@ X-Voice Stage1 has reference text, so inference can estimate generation length f
 
 SRP takes reference audio and predicts a speaking-rate bucket. During X-Voice Stage2 inference, this predicted speed is used to:
 
-- split long target text into reasonable chunks,
 - estimate each generated chunk duration,
 - keep drop-text inference stable without requiring reference text.
 
