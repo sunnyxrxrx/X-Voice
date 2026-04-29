@@ -13,7 +13,7 @@ from datasets.arrow_writer import ArrowWriter
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from srp.model.utils import count_syllables, extract_pyphen_text
+from rate_pred.model.utils import count_syllables, extract_pyphen_text
 
 TRAIN_HOURS_PER_LANG = 250
 VAL_SAMPLES_PER_LANG = 100
@@ -240,4 +240,4 @@ def main():
 if __name__ == "__main__":
     main()
 
-# python src/srp/train/datasets/prepare_multilingual_speed.py --dataset_name multilingual_qyl_test
+# python src/rate_pred/train/datasets/prepare_multilingual_speed.py --dataset_name multilingual_qyl_test

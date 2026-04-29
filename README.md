@@ -116,7 +116,7 @@ Refer to [training guidance](src/x_voice/train/README.md) for best practice.
 
 ## Speaking Rate Predictor
 
-Refer to [SRP guidance](src/srp) for the multilingual speaking rate predictor used in X-Voice.
+Refer to [speaking rate predictor guidance](src/rate_pred) for the multilingual speaking rate predictor used in X-Voice.
 
 ## Evaluation
 

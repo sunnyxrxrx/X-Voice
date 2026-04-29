@@ -23,7 +23,7 @@ x_voice/
 Prepare SRP data:
 
 ```bash
-python src/srp/train/datasets/prepare_multilingual_speed.py \
+python src/rate_pred/train/datasets/prepare_multilingual_speed.py \
   --inp_dir /path/to/x_voice \
   --dataset_name multilingual_250_100
 ```
@@ -54,7 +54,7 @@ data/multilingual_250_100_srp/
 The default config is:
 
 ```text
-src/srp/configs/SpeedPredict_Multilingual.yaml
+src/rate_pred/configs/SpeedPredict_Multilingual.yaml
 ```
 
 Important fields:
@@ -85,14 +85,14 @@ accelerate config
 Launch training:
 
 ```bash
-accelerate launch src/srp/train/train.py \
+accelerate launch src/rate_pred/train/train.py \
   --config-name SpeedPredict_Multilingual.yaml
 ```
 
 Override config values if needed:
 
 ```bash
-accelerate launch --mixed_precision=fp16 src/srp/train/train.py \
+accelerate launch --mixed_precision=fp16 src/rate_pred/train/train.py \
   --config-name SpeedPredict_Multilingual.yaml \
   ++datasets.name=multilingual_250_100 \
   ++datasets.batch_size_per_gpu=19200

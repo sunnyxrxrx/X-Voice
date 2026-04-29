@@ -93,7 +93,7 @@ VOCAB_FILE = "XVoice_Base_Stage1/vocab.txt"
 
 STAGE1_CFG = str(files("x_voice").joinpath("configs/XVoice_Base_Stage1.yaml"))
 STAGE2_CFG = str(files("x_voice").joinpath("configs/XVoice_Base_Stage2.yaml"))
-SRP_CFG = str(files("srp").joinpath("configs/SpeedPredict_Multilingual.yaml"))
+SRP_CFG = str(files("rate_pred").joinpath("configs/SpeedPredict_Multilingual.yaml"))
 EXAMPLE_REF_EN = str(files("x_voice").joinpath("infer/examples/gradio_sample/ref_en.wav"))
 EXAMPLE_REF_ZH = str(files("x_voice").joinpath("infer/examples/gradio_sample/ref_zh.wav"))
 

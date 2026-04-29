@@ -8,7 +8,7 @@ vocab_file = "src/x_voice/infer/examples/vocab.txt"
 
 
 srp_ckpt_file = "ckpts/srp_model_28000.safetensors"
-srp_model_cfg = "src/srp/configs/SpeedPredict_Multilingual.yaml"
+srp_model_cfg = "src/rate_pred/configs/SpeedPredict_Multilingual.yaml"
 
 ref_audio = "infer/examples/basic/basic_ref_en.wav"
 gen_text = """

@@ -105,7 +105,7 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["x_voice*", "srp*"]
+include = ["x_voice*", "rate_pred*"]
 namespaces = true
 
 [tool.setuptools.package-data]
@@ -117,6 +117,6 @@ x_voice = [
     "infer/examples/multitest/*",
     "infer/examples/multitest_codeswitch/*",
 ]
-srp = [
+rate_pred = [
     "configs/*.yaml",
 ]

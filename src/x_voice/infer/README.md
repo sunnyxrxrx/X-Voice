@@ -73,7 +73,7 @@ Important fields:
 | --- | --- |
 | `model_cfg` | X-Voice Stage2 yaml, usually `src/x_voice/configs/XVoice_Base_Stage2.yaml` |
 | `ckpt_file` | X-Voice Stage2 checkpoint path |
-| `srp_model_cfg` | SRP config, usually `src/srp/configs/SpeedPredict_Multilingual.yaml` |
+| `srp_model_cfg` | SRP config, usually `src/rate_pred/configs/SpeedPredict_Multilingual.yaml` |
 | `srp_ckpt_file` | SRP checkpoint path; required for X-Voice Stage2 |
 | `vocab_file` | X-Voice Stage1 vocab path used by X-Voice Stage2 tokenizer |
 | `ref_audio` | reference voice audio |

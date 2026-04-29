@@ -15,7 +15,7 @@ SRP takes reference audio and predicts a speaking-rate bucket. During X-Voice St
 ## Files
 
 ```text
-src/srp/
+src/rate_pred/
 ├── configs/
 │   └── SpeedPredict_Multilingual.yaml
 ├── model/
@@ -58,7 +58,7 @@ x_voice/
 Prepare SRP data:
 
 ```bash
-python src/srp/train/datasets/prepare_multilingual_speed.py \
+python src/rate_pred/train/datasets/prepare_multilingual_speed.py \
   --inp_dir /path/to/x_voice \
   --dataset_name multilingual_250_100
 ```
@@ -74,14 +74,14 @@ data/multilingual_250_100_srp/
 Train with the default config:
 
 ```bash
-accelerate launch src/srp/train/train.py \
+accelerate launch src/rate_pred/train/train.py \
   --config-name SpeedPredict_Multilingual.yaml
 ```
 
 If your prepared dataset name is different:
 
 ```bash
-accelerate launch src/srp/train/train.py \
+accelerate launch src/rate_pred/train/train.py \
   --config-name SpeedPredict_Multilingual.yaml \
   ++datasets.name=your_dataset_name
 ```
@@ -89,7 +89,7 @@ accelerate launch src/srp/train/train.py \
 For full preprocessing and training details, see:
 
 ```text
-src/srp/train/README.md
+src/rate_pred/train/README.md
 ```
 
 ## Inference

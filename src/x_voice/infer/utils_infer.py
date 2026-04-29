@@ -57,8 +57,8 @@ def suppress_stdout_stderr():
 
 from x_voice.model.cfm import CFM
 from x_voice.model.cfm_sft import CFM_SFT
-from srp.model.speed_predictor import SpeedPredictor
-from srp.model.utils import count_syllables
+from rate_pred.model.speed_predictor import SpeedPredictor
+from rate_pred.model.utils import count_syllables
 from x_voice.model.utils import convert_char_to_pinyin, get_ipa_id, get_tokenizer, str_to_list_ipa_all
 from x_voice.train.datasets.ipa_v3_tokenizer import PhonemizeTextTokenizer as PhonemizeTextTokenizerV3
 from x_voice.train.datasets.ipa_v6_tokenizer import PhonemizeTextTokenizer as PhonemizeTextTokenizerV6

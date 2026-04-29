@@ -203,7 +203,7 @@ def load_dataset(
     
     suffix = "_val" if split == "val" else ""
     if dataset_type == "CustomDataset":
-        rel_data_path = str(files("srp").joinpath(f"../../data/{dataset_name}_srp"))
+        rel_data_path = str(files("rate_pred").joinpath(f"../../data/{dataset_name}_srp"))
         if audio_type == "raw":
             try:
                 train_dataset = load_from_disk(f"{rel_data_path}/raw{suffix}")
@@ -246,7 +246,7 @@ def load_dataset(
         )
         pre, post = dataset_name.split("_")
         train_dataset = HFDataset(
-            load_dataset(f"{pre}/{pre}", split=f"train.{post}", cache_dir=str(files("srp").joinpath("../../data"))),
+            load_dataset(f"{pre}/{pre}", split=f"train.{post}", cache_dir=str(files("rate_pred").joinpath("../../data"))),
         )
     return train_dataset
 

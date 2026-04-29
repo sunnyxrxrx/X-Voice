@@ -20,7 +20,7 @@ from pathlib import Path
 import pyphen
 from pythainlp.tokenize import syllable_tokenize
 
-from srp.model.jp_syllable import split_syllables as ja_split_syllables
+from rate_pred.model.jp_syllable import split_syllables as ja_split_syllables
 from finnsyll import FinnSyll
 
 def seed_everything(seed=0):

@@ -71,7 +71,7 @@ from x_voice.infer.utils_infer import (
 
 
 DEFAULT_MODEL = "XVoice_Base_Stage2"
-DEFAULT_SRP_CFG = str(files("srp").joinpath("configs/SpeedPredict_Multilingual.yaml"))
+DEFAULT_SRP_CFG = str(files("rate_pred").joinpath("configs/SpeedPredict_Multilingual.yaml"))
 DROP_TEXT_PLACEHOLDER = "Drop-text mode ignores reference text."
 
 

@@ -18,7 +18,7 @@ from x_voice.model.utils import convert_char_to_pinyin, str_to_list_ipa_all
 from x_voice.eval.text_normalizer import TextNormalizer
 from x_voice.infer.utils_infer import denoise_ref_audio
 import pickle
-from srp.model.utils import count_syllables
+from rate_pred.model.utils import count_syllables
 
 
 def get_testset_metainfo(data_dir, in_language, ref_language=None, drop_text=False, use_truth_duration=False):
