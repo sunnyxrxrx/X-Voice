@@ -470,15 +470,42 @@ def infer(ref_audio, ref_text, text_mode, gen_text, model_choice, dominant_langu
         return gr.update(), ref_text
 
 
+def _empty_translate_outputs(ref_text):
+    return gr.update(value=[]), gr.update(choices=[], value=None), "", gr.update(value=None), {}, ref_text
+
+
+def _iter_translation_rows(rows):
+    if rows is None:
+        return []
+    if isinstance(rows, dict) and "data" in rows:
+        rows = rows["data"]
+    if hasattr(rows, "to_dict"):
+        rows = rows.to_dict("records")
+        return [
+            (str(row.get("Language", "")).strip(), str(row.get("Translated Text", "")).strip())
+            for row in rows
+        ]
+    parsed_rows = []
+    for row in rows:
+        if isinstance(row, dict):
+            label = row.get("Language", "")
+            text = row.get("Translated Text", "")
+        else:
+            label = row[0] if len(row) > 0 else ""
+            text = row[1] if len(row) > 1 else ""
+        parsed_rows.append((str(label).strip(), str(text).strip()))
+    return parsed_rows
+
+
 @gpu_decorator
-def translate_and_clone(
+def translate_targets(
     ref_audio,
     ref_text,
     ref_language_choice,
     target_language_choices,
     show_info=gr.Info,
 ):
-    empty_results = "", gr.update(choices=[], value=None), "", gr.update(value=None), {}, ref_text
+    empty_results = _empty_translate_outputs(ref_text)
     if not ref_audio:
         gr.Warning("Please provide reference audio.")
         return empty_results
@@ -489,9 +516,7 @@ def translate_and_clone(
 
     torch.manual_seed(np.random.randint(0, 2**31 - 1))
     try:
-        current_vocoder = get_vocoder()
-        runtime = get_stage1_runtime(show_info=show_info)
-        ref_audio, ref_text, ref_lang = preprocess_translate_ref(
+        _, ref_text, ref_lang = preprocess_translate_ref(
             ref_audio,
             ref_text,
             ref_language_choice,
@@ -516,12 +541,74 @@ def translate_and_clone(
         results_state = {}
         result_rows = []
         for target_lang in target_langs:
-            print(f"[DEBUG] translate_and_clone target={target_lang} start", flush=True)
-            show_info(f"Translating and cloning: {LANGUAGE_LABEL_BY_CODE[target_lang]}")
+            show_info(f"Translating: {LANGUAGE_LABEL_BY_CODE[target_lang]}")
             translated_text = translate_text_nllb(source_text, ref_lang, target_lang, device_name=device, show_info=show_info)
-            print(f"[DEBUG] translate_and_clone target={target_lang} translated={translated_text}", flush=True)
             translated_text = normalize_required_text(translated_text, target_lang)
-            print(f"[DEBUG] translate_and_clone target={target_lang} before infer", flush=True)
+            label = LANGUAGE_LABEL_BY_CODE[target_lang]
+            result_rows.append([label, translated_text])
+            results_state[label] = {
+                "lang": target_lang,
+                "text": translated_text,
+                "audio": None,
+            }
+
+        first_label = result_rows[0][0]
+        return (
+            gr.update(value=result_rows),
+            gr.update(choices=[row[0] for row in result_rows], value=first_label),
+            result_rows[0][1],
+            gr.update(value=None),
+            results_state,
+            ref_text,
+        )
+    except Exception as exc:
+        gr.Warning(str(exc))
+        return empty_results
+
+
+@gpu_decorator
+def clone_translations(
+    ref_audio,
+    ref_text,
+    ref_language_choice,
+    translated_rows,
+    show_info=gr.Info,
+):
+    empty_results = _empty_translate_outputs(ref_text)
+    if not ref_audio:
+        gr.Warning("Please provide reference audio.")
+        return empty_results
+
+    rows = [
+        (label, text)
+        for label, text in _iter_translation_rows(translated_rows)
+        if label and text
+    ]
+    if not rows:
+        gr.Warning("Please translate or enter at least one target text first.")
+        return empty_results
+
+    torch.manual_seed(np.random.randint(0, 2**31 - 1))
+    try:
+        current_vocoder = get_vocoder()
+        runtime = get_stage1_runtime(show_info=show_info)
+        ref_audio, ref_text, ref_lang = preprocess_translate_ref(
+            ref_audio,
+            ref_text,
+            ref_language_choice,
+            show_info=show_info,
+        )
+        if ref_lang not in LANGUAGE_CODES:
+            raise ValueError(f"Reference language '{ref_lang}' is not one of the 30 supported languages.")
+
+        results_state = {}
+        updated_rows = []
+        for label, translated_text in rows:
+            target_lang = parse_language_choice(label)
+            if target_lang == ref_lang:
+                continue
+            show_info(f"Cloning: {LANGUAGE_LABEL_BY_CODE[target_lang]}")
+            translated_text = normalize_required_text(translated_text, target_lang)
             final_wave, final_sample_rate, _ = infer_xvoice_process(
                 ref_audio,
                 ref_text,
@@ -554,7 +641,6 @@ def translate_and_clone(
                 post_processing=POST_PROCESSING,
                 device_name=device,
             )
-            print(f"[DEBUG] translate_and_clone target={target_lang} after infer", flush=True)
             label = LANGUAGE_LABEL_BY_CODE[target_lang]
             audio = save_translate_audio_result(final_sample_rate, final_wave, target_lang)
             results_state[label] = {
@@ -562,14 +648,15 @@ def translate_and_clone(
                 "text": translated_text,
                 "audio": audio,
             }
-            result_rows.append((label, translated_text))
+            updated_rows.append([label, translated_text])
+
+        if not results_state:
+            raise ValueError("Please keep at least one target language different from the reference language.")
 
         first_label = next(iter(results_state))
         first_result = results_state[first_label]
-        results_markdown = format_translate_results_markdown(result_rows)
-        print("[DEBUG] translate_and_clone before return", flush=True)
         return (
-            results_markdown,
+            gr.update(value=updated_rows),
             gr.update(choices=list(results_state.keys()), value=first_label),
             first_result["text"],
             first_result["audio"],
@@ -790,14 +877,21 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
                 )
                 with gr.Row():
                     select_all_targets_btn = gr.Button("Generate All Languages")
-                    translate_clone_btn = gr.Button("Translate & Clone", variant="primary")
+                    translate_btn = gr.Button("Translate", variant="primary")
+                    translate_clone_btn = gr.Button("Clone")
                 gr.Markdown("**Example Prompts**")
                 with gr.Row():
                     translate_english_sample_btn = gr.Button("English Sample")
                     translate_mandarin_sample_btn = gr.Button("Mandarin Sample")
 
             with gr.Column(scale=1):
-                translate_results_markdown = gr.Markdown(label="Results")
+                translate_results_table = gr.Dataframe(
+                    headers=["Language", "Translated Text"],
+                    datatype=["str", "str"],
+                    label="Translations",
+                    interactive=True,
+                    wrap=True,
+                )
                 preview_language_input = gr.Dropdown(
                     choices=[],
                     value=None,
@@ -879,8 +973,8 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
             translate_ref_language_input,
         ],
     )
-    translate_clone_btn.click(
-        translate_and_clone,
+    translate_btn.click(
+        translate_targets,
         inputs=[
             translate_ref_audio_input,
             translate_ref_text_input,
@@ -888,7 +982,24 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
             target_languages_input,
         ],
         outputs=[
-            translate_results_markdown,
+            translate_results_table,
+            preview_language_input,
+            preview_translated_text,
+            preview_audio_output,
+            translate_results_state,
+            translate_ref_text_input,
+        ],
+    )
+    translate_clone_btn.click(
+        clone_translations,
+        inputs=[
+            translate_ref_audio_input,
+            translate_ref_text_input,
+            translate_ref_language_input,
+            translate_results_table,
+        ],
+        outputs=[
+            translate_results_table,
             preview_language_input,
             preview_translated_text,
             preview_audio_output,
