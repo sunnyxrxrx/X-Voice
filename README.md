@@ -82,6 +82,14 @@ cd X-Voice
 pip install -e .
 ```
 
+Check your ESpeak-ng installation:
+
+```bash
+espeak-ng --version
+```
+
+If not found, run `src/x_voice/prepare_ipa.sh` first.
+
 ## Inference
 
 - In order to achieve desired performance, take a moment to read [detailed guidance](src/x_voice/infer).
@@ -122,6 +130,8 @@ X-Voice/
 ├── data/                   # datasets and processed data
 ├── src/
 │   ├── srp/                # speaking rate predictor
+│   ├── third_party/
+│   │   └── BigVGAN/        # BigVGAN submodule
 │   └── x_voice/            # main X-Voice package
 └── pyproject.toml          # package definition and dependencies
 ```
