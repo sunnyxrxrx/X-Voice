@@ -1,23 +1,23 @@
 # X-Voice: Enabling Everyone to Speak 30 Languages via Zero-Shot Cross-Lingual Voice Cloning
 
-[![python](https://img.shields.io/badge/Python-3.11-brightgreen)](https://github.com/SWivid/F5-TTS)
-[![arXiv](https://img.shields.io/badge/arXiv-Coming_soon-b31b1b.svg?logo=arXiv)](https://arxiv.org/abs/unknown)
-[![demo](https://img.shields.io/badge/GitHub-Demo-orange.svg)](https://sunnyxrxrx.github.io/X-Voice-Demo/)
-[![hfspace](https://img.shields.io/badge/🤗-HF%20Space-yellow)](unknown)
-[![dataset](https://img.shields.io/badge/🤗-Dataset-yellow)](https://huggingface.co/datasets/XRXRX/X-Voice-Dataset-Train)
-[![dataset](https://img.shields.io/badge/🤗-Benchmark-yellow)](https://huggingface.co/datasets/XRXRX/X-Voice-Testset)
-[![modelscope](https://img.shields.io/badge/ModelScope-Dataset-blue)](https://modelscope.cn/datasets/sunnyxrxrx/X-Voice-Dataset-Train)
-[![lab](https://img.shields.io/badge/🏫-X--LANCE-grey?labelColor=lightgrey)](https://x-lance.sjtu.edu.cn/)
-[![lab](https://img.shields.io/badge/🏫-SII-grey?labelColor=lightgrey)](https://www.sii.edu.cn/)
-[![company](https://img.shields.io/badge/🏢-Geely-grey?labelColor=lightgrey)](https://www.geely.com)
-[![lab](https://img.shields.io/badge/🏫-CLSP-grey?labelColor=lightgrey)](https://www.clsp.jhu.edu)
+<a href="https://arxiv.org/abs/unknown" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Paper-Coming%20Soon-b31b1b.svg?logo=arXiv&style=for-the-badge" alt="Paper"></a>
+<a href="https://sunnyxrxrx.github.io/X-Voice-Demo/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Demo-Samples-orange.svg?logo=github&style=for-the-badge" alt="Demo"></a>
+<img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
+<a href="unknown" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Online%20Experience-HF%20Space-yellow?labelColor=grey&logo=huggingface&style=for-the-badge" alt="HF Space"></a>
+<a href="https://huggingface.co/datasets/XRXRX/X-Voice-Dataset-Train" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Dataset-Train%20Set-yellow?labelColor=grey&logo=huggingface&style=for-the-badge" alt="HF Dataset"></a>
+<a href="https://huggingface.co/datasets/XRXRX/X-Voice-Testset" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Benchmark-Test%20Set-lightgrey?labelColor=grey&logo=huggingface&style=for-the-badge" alt="HF Benchmark"></a>
+<a href="https://modelscope.cn/datasets/sunnyxrxrx/X-Voice-Dataset-Train" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/ModelScope-Dataset-blue?logo=alibabacloud&style=for-the-badge" alt="ModelScope"></a>
+<a href="https://x-lance.sjtu.edu.cn/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/X--LANCE-grey?labelColor=lightgrey&logo=leanpub&style=for-the-badge" alt="X-LANCE"></a>
+<a href="https://www.sii.edu.cn/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/SII-grey?labelColor=lightgrey&logo=leanpub&style=for-the-badge" alt="SII"></a>
+<a href="https://www.geely.com" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Geely-grey?labelColor=lightgrey&logo=accenture&style=for-the-badge" alt="Geely"></a>
+<a href="https://www.clsp.jhu.edu" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/CLSP-grey?labelColor=lightgrey&logo=leanpub&style=for-the-badge" alt="CLSP"></a>
 <!-- <img src="https://github.com/user-attachments/assets/12d7749c-071a-427c-81bf-b87b91def670" alt="Watermark" style="width: 40px; height: auto"> -->
 
-**X-Voice** is a flow-matching based multilingual zero-shot voice cloning system that enables one speaker to speak 30 languages.
+**X-Voice** is a flow-matching-based multilingual zero-shot voice cloning system that enables one speaker to speak 30 languages.
 
 ## News
 
-- **2026/04/30**: X-Voice codebase, model, demo, dataset, and benchmark are released.
+- **2026/04/30**: X-Voice <a href="https://github.com/sunnyxrxrx/X-Voice" target="_blank" rel="noopener noreferrer">codebase</a>, <a href="https://huggingface.co/XRXRX/X-Voice" target="_blank" rel="noopener noreferrer">model</a>, <a href="https://sunnyxrxrx.github.io/X-Voice-Demo/" target="_blank" rel="noopener noreferrer">demo</a>, <a href="https://huggingface.co/datasets/XRXRX/X-Voice-Dataset-Train" target="_blank" rel="noopener noreferrer">dataset</a>, and <a href="https://huggingface.co/datasets/XRXRX/X-Voice-Testset" target="_blank" rel="noopener noreferrer">benchmark</a> are released.
 
 ## Installation
 
@@ -112,9 +112,11 @@ python -m x_voice.infer.infer_cli_stage2 -c src/x_voice/infer/examples/basic/bas
 
 ## Training
 
+### TTS Model Training
+
 Refer to [training guidance](src/x_voice/train/README.md) for best practice.
 
-## Speaking Rate Predictor
+### Speaking Rate Predictor Training
 
 Refer to [speaking rate predictor guidance](src/rate_pred) for the multilingual speaking rate predictor used in X-Voice.
 
@@ -129,7 +131,7 @@ X-Voice/
 ├── ckpts/                  # checkpoints
 ├── data/                   # datasets and processed data
 ├── src/
-│   ├── srp/                # speaking rate predictor
+│   ├── rate_pred/          # speaking rate predictor
 │   ├── third_party/
 │   │   └── BigVGAN/        # BigVGAN submodule
 │   └── x_voice/            # main X-Voice package
