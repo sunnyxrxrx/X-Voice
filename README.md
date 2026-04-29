@@ -12,11 +12,7 @@
 [![lab](https://img.shields.io/badge/🏫-CLSP-grey?labelColor=lightgrey)](https://www.clsp.jhu.edu)
 <!-- <img src="https://github.com/user-attachments/assets/12d7749c-071a-427c-81bf-b87b91def670" alt="Watermark" style="width: 40px; height: auto"> -->
 
-**X-Voice** is a flow-matching based multilingual zero-shot voice cloning system that enables one speaker to speak 30+ languages without requiring reference text at inference time.
-
-Built on top of F5-TTS, X-Voice extends the framework with a large-scale multilingual training recipe, unified multilingual phonetic representations, and transcript-free fine-tuning for stronger cross-lingual voice cloning.
-
-We also construct and open-source a curated 420,000-hour multilingual corpus and a dedicated multilingual zero-shot speech synthesis benchmark.
+**X-Voice** is a flow-matching based multilingual zero-shot voice cloning system that enables one speaker to speak 30 languages.
 
 ## News
 
@@ -80,9 +76,8 @@ conda install ffmpeg
 ### Install X-Voice
 
 ```bash
-git clone https://github.com/QingyuLiu0521/X-Voice.git
+git clone https://github.com/sunnyxrxrx/X-Voice.git
 cd X-Voice
-git submodule update --init src/MAVL
 pip install -e .
 ```
 
@@ -92,30 +87,31 @@ pip install -e .
 
 ### 1. Gradio App
 
-Currently supported features:
-
-- Basic multilingual zero-shot TTS
-- Web-based interactive inference
-
 ```bash
-# Launch a Gradio app (web interface)
-x-voice_infer-gradio
-
-# Specify the port/host
-x-voice_infer-gradio --port 7860 --host 0.0.0.0
+x-voice_infer-gradio --host 0.0.0.0 --port 7860
 ```
 
 ### 2. CLI Inference
 
+```bash
+# X-Voice Stage1
+python -m x_voice.infer.infer_cli_stage1 -c src/x_voice/infer/examples/basic/basic_stage1.toml
+
+# X-Voice Stage2
+python -m x_voice.infer.infer_cli_stage2 -c src/x_voice/infer/examples/basic/basic_stage2.toml
+```
+
 ## Training
 
-Refer to [training & finetuning guidance](src/x_voice/train/README.md) for best practice.
+Refer to [training guidance](src/x_voice/train/README.md) for best practice.
 
 ## Speaking Rate Predictor
 
 Refer to [SRP guidance](src/srp) for the multilingual speaking rate predictor used in X-Voice.
 
-## [Evaluation](src/x_voice/eval)
+## Evaluation
+
+Refer to [evaluation guidance](src/x_voice/eval/README.md) for benchmark and metric scripts.
 
 ## Repo Structure
 
@@ -124,7 +120,6 @@ X-Voice/
 ├── ckpts/                  # checkpoints
 ├── data/                   # datasets and processed data
 ├── src/
-│   ├── MAVL/               # multilingual text / phonetic processing utilities
 │   ├── srp/                # speaking rate predictor
 │   └── x_voice/            # main X-Voice package
 └── pyproject.toml          # package definition and dependencies
@@ -142,7 +137,11 @@ pre-commit run --all-files
 
 ## Acknowledgements
 
-## Citation
+- [F5-TTS](https://arxiv.org/abs/2410.06885) brilliant work and the foundation of this codebase
+- [NLLB](https://huggingface.co/facebook/nllb-200-distilled-600M) for translation in the Gradio demo
+- [torchdiffeq](https://github.com/rtqichen/torchdiffeq) as ODE solver, [Vocos](https://huggingface.co/charactr/vocos-mel-24khz) and [BigVGAN](https://github.com/NVIDIA/BigVGAN) as vocoder
+- [FunASR](https://github.com/modelscope/FunASR), [faster-whisper](https://github.com/SYSTRAN/faster-whisper), [UniSpeech](https://github.com/microsoft/UniSpeech), [SpeechMOS](https://github.com/tarepan/SpeechMOS) for evaluation tools
+- [MAVL](https://github.com/k1064190/MAVL/tree/main) for Japanese syllable counting
 
 ## License
 
