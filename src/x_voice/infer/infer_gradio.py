@@ -671,7 +671,6 @@ def switch_text_mode(text_mode):
 
 
 def switch_app_mode(app_mode):
-    print(f"[DEBUG] switch_app_mode: {app_mode}", flush=True)
     return (
         gr.update(visible=app_mode == APP_MODE_CLONE),
         gr.update(visible=app_mode == APP_MODE_TRANSLATE_CLONE),
