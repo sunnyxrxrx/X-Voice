@@ -473,10 +473,10 @@ def load_dataset(
 
     if dataset_type == "CustomDataset":
         if not sft:
-            rel_data_path = str(files("x_voice").joinpath(f"../../data/{dataset_name}_{tokenizer}"))
+            rel_data_path = os.path.join(os.getcwd(), "data", f"{dataset_name}_{tokenizer}")
         else:
-            rel_data_path = str(files("x_voice").joinpath(f"../../data/{dataset_name}_{tokenizer}_sft"))
-        if audio_type == "raw":
+            rel_data_path = os.path.join(os.getcwd(), "data", f"{dataset_name}_{tokenizer}_sft")
+        if audio_type == "raw": 
             try:
                 train_dataset = load_from_disk(f"{rel_data_path}/raw")
             except:  # noqa: E722
@@ -530,7 +530,7 @@ def load_dataset(
         )
         pre, post = dataset_name.split("_")
         train_dataset = HFDataset(
-            load_dataset(f"{pre}/{pre}", split=f"train.{post}", cache_dir=str(files("x_voice").joinpath("../../data"))),
+            load_dataset(f"{pre}/{pre}", split=f"train.{post}", cache_dir=os.path.join(os.getcwd(), "data")),
         )
 
     return train_dataset
@@ -553,7 +553,7 @@ def load_dataset_gp(
     print("Loading dataset ...")
 
     if dataset_type == "CustomDataset":
-        rel_data_path = str(files("x_voice").joinpath(f"../../data/{dataset_name}_{tokenizer}_gp"))
+        rel_data_path = str(os.getcwd().joinpath(f"./data/{dataset_name}_{tokenizer}_gp"))
         if audio_type == "raw":
             try:
                 train_dataset = load_from_disk(f"{rel_data_path}/raw")
@@ -595,7 +595,7 @@ def load_dataset_gp(
         )
         pre, post = dataset_name.split("_")
         train_dataset = HFDataset(
-            load_dataset(f"{pre}/{pre}", split=f"train.{post}", cache_dir=str(files("x_voice").joinpath("../../data"))),
+            load_dataset(f"{pre}/{pre}", split=f"train.{post}", cache_dir=os.path.join(os.getcwd(), "data")),
         )
 
     return train_dataset

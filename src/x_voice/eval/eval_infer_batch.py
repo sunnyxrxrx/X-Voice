@@ -43,7 +43,8 @@ use_ema = True
 target_rms = 0.1
 
 
-rel_path = str(files("x_voice").joinpath("../../"))
+rel_path = os.getcwd() #str(files("x_voice").joinpath("../../"))
+
 
 
 def main():

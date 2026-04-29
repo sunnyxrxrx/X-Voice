@@ -277,7 +277,7 @@ def get_tokenizer(dataset_name, tokenizer, sft: bool = False):
                 - if use "byte", set to 256 (unicode byte range)
     """
     if tokenizer in ["pinyin", "char"] or tokenizer.startswith("ipa"):
-        tokenizer_path = os.path.join(files("x_voice").joinpath("../../data"), f"{dataset_name}_{tokenizer}/vocab.txt")
+        tokenizer_path = os.path.join(os.getcwd(), "data", f"{dataset_name}_{tokenizer}/vocab.txt")
         with open(tokenizer_path, "r", encoding="utf-8") as f:
             vocab_char_map = {}
             for i, char in enumerate(f):
