@@ -782,6 +782,11 @@ BUTTON_CSS = """
 .plain-markdown {
     padding: 0 !important;
 }
+
+.white-panel,
+.white-panel > div {
+    background: #ffffff !important;
+}
 """
 
 
@@ -854,7 +859,7 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
                         code_switch_sample_btn = gr.Button("Code-Switch Sample")
                 generate_btn = gr.Button("Synthesize", variant="primary", elem_classes=["orange-button"])
 
-            with gr.Column(scale=1):
+            with gr.Column(scale=1, elem_classes=["white-panel"]):
                 audio_output = gr.Audio(label="Generated Audio")
                 gr.Markdown("**Example Prompts**", elem_classes=["plain-markdown"])
                 with gr.Row():
@@ -890,7 +895,7 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
                 )
                 select_all_targets_btn = gr.Button("Generate All Languages", elem_classes=["orange-button"])
 
-            with gr.Column(scale=1):
+            with gr.Column(scale=1, elem_classes=["white-panel"]):
                 gr.Markdown("**Step 1: Translate Text**", elem_classes=["plain-markdown"])
                 translate_btn = gr.Button("Translate Text", variant="primary", elem_classes=["orange-button"])
                 gr.Markdown("**Step 2: Clone Voice**", elem_classes=["plain-markdown"])
