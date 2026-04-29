@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "x-voice"
-version = "0.1.0"
+version = "0.1.1"
 description = "X-Voice multilingual TTS toolkit"
 requires-python = ">=3.11"
 authors = [
@@ -21,7 +21,7 @@ classifiers = [
 dependencies = [
     "addict",
     "accelerate>=0.33.0",
-    "bg-text-normalizer",
+    "bg_text_normalizer",
     "bitsandbytes>0.37.0; platform_machine!='arm64' and platform_system!='Darwin'",
     "cached_path",
     "click",
@@ -82,7 +82,6 @@ eval = [
     "jiwer",
     "modelscope",
     "onnxruntime-gpu",
-    "tts-preprocess-et @ git+https://github.com/TartuNLP/tts_preprocess_et.git",
     "zhconv",
     "zhon",
 ]

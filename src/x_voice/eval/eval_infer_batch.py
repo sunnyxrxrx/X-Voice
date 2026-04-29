@@ -174,7 +174,7 @@ def main():
     
     # speedpredictor config
     if sp_type == "pretrained":
-        sp_cfg = OmegaConf.load(str(files("x_voice").joinpath(f"configs/{exp_name_sp}.yaml")))
+        sp_cfg = OmegaConf.load(str(files("rate_pred").joinpath(f"configs/{exp_name_sp}.yaml")))
         mel_spec_kwargs = sp_cfg.model.mel_spec
         sp_arc = sp_cfg.model.arch
         
