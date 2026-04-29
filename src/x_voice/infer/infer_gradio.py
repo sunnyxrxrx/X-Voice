@@ -748,7 +748,33 @@ def load_code_switch_sample():
     return updates
 
 
-with gr.Blocks() as app:
+BUTTON_CSS = """
+button {
+    background: #f97316 !important;
+    border-color: #ea580c !important;
+    color: #ffffff !important;
+}
+
+button:hover {
+    background: #ea580c !important;
+    border-color: #c2410c !important;
+}
+
+.plain-markdown,
+.plain-markdown .prose,
+.plain-markdown > div {
+    background: #ffffff !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+
+.plain-markdown {
+    padding: 0 !important;
+}
+"""
+
+
+with gr.Blocks(css=BUTTON_CSS) as app:
     gr.Markdown(
         """
 # X-Voice Online Demo
@@ -819,7 +845,7 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
 
             with gr.Column(scale=1):
                 audio_output = gr.Audio(label="Generated Audio")
-                gr.Markdown("**Example Prompts**")
+                gr.Markdown("**Example Prompts**", elem_classes=["plain-markdown"])
                 with gr.Row():
                     clone_english_sample_btn = gr.Button("English Sample")
                     clone_mandarin_sample_btn = gr.Button("Mandarin Sample")
@@ -831,7 +857,8 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
             with gr.Column(scale=1):
                 gr.Markdown(
                     "Translate the reference text with NLLB-200 0.6B, edit the translated text if needed, "
-                    "then clone the reference voice in the selected target languages."
+                    "then clone the reference voice in the selected target languages.",
+                    elem_classes=["plain-markdown"],
                 )
                 translate_ref_audio_input = gr.Audio(label="Reference Audio", type="filepath")
                 translate_ref_text_input = gr.Textbox(
@@ -851,12 +878,12 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
                     multiselect=True,
                 )
                 select_all_targets_btn = gr.Button("Generate All Languages")
-                gr.Markdown("**Step 1: Translate Text**")
-                translate_btn = gr.Button("Translate Text", variant="primary")
-                gr.Markdown("**Step 2: Clone Voice**")
-                translate_clone_btn = gr.Button("Clone Voice")
 
             with gr.Column(scale=1):
+                gr.Markdown("**Step 1: Translate Text**", elem_classes=["plain-markdown"])
+                translate_btn = gr.Button("Translate Text", variant="primary")
+                gr.Markdown("**Step 2: Clone Voice**", elem_classes=["plain-markdown"])
+                translate_clone_btn = gr.Button("Clone Voice")
                 preview_language_input = gr.Dropdown(
                     choices=[],
                     value=None,
@@ -867,7 +894,7 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
                     lines=5,
                 )
                 preview_audio_output = gr.Audio(label="Generated Audio")
-                gr.Markdown("**Example Prompts**")
+                gr.Markdown("**Example Prompts**", elem_classes=["plain-markdown"])
                 with gr.Row():
                     translate_english_sample_btn = gr.Button("English Sample")
 
