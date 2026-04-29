@@ -471,30 +471,16 @@ def infer(ref_audio, ref_text, text_mode, gen_text, model_choice, dominant_langu
 
 
 def _empty_translate_outputs(ref_text):
-    return gr.update(value=[]), gr.update(choices=[], value=None), "", gr.update(value=None), {}, ref_text
+    return gr.update(choices=[], value=None), "", gr.update(value=None), {}, None, ref_text
 
 
-def _iter_translation_rows(rows):
-    if rows is None:
-        return []
-    if isinstance(rows, dict) and "data" in rows:
-        rows = rows["data"]
-    if hasattr(rows, "to_dict"):
-        rows = rows.to_dict("records")
-        return [
-            (str(row.get("Language", "")).strip(), str(row.get("Translated Text", "")).strip())
-            for row in rows
-        ]
-    parsed_rows = []
-    for row in rows:
-        if isinstance(row, dict):
-            label = row.get("Language", "")
-            text = row.get("Translated Text", "")
-        else:
-            label = row[0] if len(row) > 0 else ""
-            text = row[1] if len(row) > 1 else ""
-        parsed_rows.append((str(label).strip(), str(text).strip()))
-    return parsed_rows
+def save_current_preview_text(results_state, current_label, current_text):
+    if results_state and current_label in results_state:
+        results_state = dict(results_state)
+        result = dict(results_state[current_label])
+        result["text"] = current_text or ""
+        results_state[current_label] = result
+    return results_state
 
 
 @gpu_decorator
@@ -539,26 +525,24 @@ def translate_targets(
             raise ValueError("Reference text is empty.")
 
         results_state = {}
-        result_rows = []
         for target_lang in target_langs:
             show_info(f"Translating: {LANGUAGE_LABEL_BY_CODE[target_lang]}")
             translated_text = translate_text_nllb(source_text, ref_lang, target_lang, device_name=device, show_info=show_info)
             translated_text = normalize_required_text(translated_text, target_lang)
             label = LANGUAGE_LABEL_BY_CODE[target_lang]
-            result_rows.append([label, translated_text])
             results_state[label] = {
                 "lang": target_lang,
                 "text": translated_text,
                 "audio": None,
             }
 
-        first_label = result_rows[0][0]
+        first_label = next(iter(results_state))
         return (
-            gr.update(value=result_rows),
-            gr.update(choices=[row[0] for row in result_rows], value=first_label),
-            result_rows[0][1],
+            gr.update(choices=list(results_state.keys()), value=first_label),
+            results_state[first_label]["text"],
             gr.update(value=None),
             results_state,
+            first_label,
             ref_text,
         )
     except Exception as exc:
@@ -571,7 +555,9 @@ def clone_translations(
     ref_audio,
     ref_text,
     ref_language_choice,
-    translated_rows,
+    results_state,
+    current_preview_label,
+    current_preview_text,
     show_info=gr.Info,
 ):
     empty_results = _empty_translate_outputs(ref_text)
@@ -579,12 +565,8 @@ def clone_translations(
         gr.Warning("Please provide reference audio.")
         return empty_results
 
-    rows = [
-        (label, text)
-        for label, text in _iter_translation_rows(translated_rows)
-        if label and text
-    ]
-    if not rows:
+    results_state = save_current_preview_text(results_state, current_preview_label, current_preview_text)
+    if not results_state:
         gr.Warning("Please translate or enter at least one target text first.")
         return empty_results
 
@@ -601,11 +583,13 @@ def clone_translations(
         if ref_lang not in LANGUAGE_CODES:
             raise ValueError(f"Reference language '{ref_lang}' is not one of the 30 supported languages.")
 
-        results_state = {}
-        updated_rows = []
-        for label, translated_text in rows:
+        cloned_state = {}
+        for label, result in results_state.items():
             target_lang = parse_language_choice(label)
             if target_lang == ref_lang:
+                continue
+            translated_text = (result.get("text") or "").strip()
+            if not translated_text:
                 continue
             show_info(f"Cloning: {LANGUAGE_LABEL_BY_CODE[target_lang]}")
             translated_text = normalize_required_text(translated_text, target_lang)
@@ -643,24 +627,23 @@ def clone_translations(
             )
             label = LANGUAGE_LABEL_BY_CODE[target_lang]
             audio = save_translate_audio_result(final_sample_rate, final_wave, target_lang)
-            results_state[label] = {
+            cloned_state[label] = {
                 "lang": target_lang,
                 "text": translated_text,
                 "audio": audio,
             }
-            updated_rows.append([label, translated_text])
 
-        if not results_state:
+        if not cloned_state:
             raise ValueError("Please keep at least one target language different from the reference language.")
 
-        first_label = next(iter(results_state))
-        first_result = results_state[first_label]
+        first_label = current_preview_label if current_preview_label in cloned_state else next(iter(cloned_state))
+        first_result = cloned_state[first_label]
         return (
-            gr.update(value=updated_rows),
-            gr.update(choices=list(results_state.keys()), value=first_label),
+            gr.update(choices=list(cloned_state.keys()), value=first_label),
             first_result["text"],
             first_result["audio"],
-            results_state,
+            cloned_state,
+            first_label,
             ref_text,
         )
     except Exception as exc:
@@ -706,21 +689,12 @@ def select_all_target_languages(ref_language_choice):
     )
 
 
-def preview_translate_result(results_state, preview_label):
+def preview_translate_result(results_state, current_label, current_text, preview_label):
+    results_state = save_current_preview_text(results_state, current_label, current_text)
     if not results_state or not preview_label or preview_label not in results_state:
-        return "", gr.update(value=None)
+        return "", gr.update(value=None), results_state, preview_label
     result = results_state[preview_label]
-    return result["text"], result["audio"]
-
-
-def format_translate_results_markdown(result_rows):
-    if not result_rows:
-        return ""
-    lines = []
-    for label, translated_text in result_rows:
-        safe_text = translated_text.replace("\n", " ").strip()
-        lines.append(f"**{label}**  \n{safe_text}")
-    return "\n\n".join(lines)
+    return result["text"], result["audio"], results_state, preview_label
 
 
 def load_clone_english_sample():
@@ -733,10 +707,6 @@ def load_clone_mandarin_sample():
 
 def load_translate_english_sample():
     return EXAMPLE_REF_EN, "Some call me nature, others call me mother nature.", "English(en)"
-
-
-def load_translate_mandarin_sample():
-    return EXAMPLE_REF_ZH, "对，这就是我，万人敬仰的太乙真人。", "Mandarin(zh)"
 
 
 def add_code_switch_segment(current_count):
@@ -856,6 +826,7 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
 
     with gr.Group(visible=False) as translate_panel:
         translate_results_state = gr.State({})
+        current_preview_language_state = gr.State(None)
         with gr.Row():
             with gr.Column(scale=1):
                 translate_ref_audio_input = gr.Audio(label="Reference Audio", type="filepath")
@@ -879,19 +850,8 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
                     select_all_targets_btn = gr.Button("Generate All Languages")
                     translate_btn = gr.Button("Translate", variant="primary")
                     translate_clone_btn = gr.Button("Clone")
-                gr.Markdown("**Example Prompts**")
-                with gr.Row():
-                    translate_english_sample_btn = gr.Button("English Sample")
-                    translate_mandarin_sample_btn = gr.Button("Mandarin Sample")
 
             with gr.Column(scale=1):
-                translate_results_table = gr.Dataframe(
-                    headers=["Language", "Translated Text"],
-                    datatype=["str", "str"],
-                    label="Translations",
-                    interactive=True,
-                    wrap=True,
-                )
                 preview_language_input = gr.Dropdown(
                     choices=[],
                     value=None,
@@ -902,6 +862,9 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
                     lines=5,
                 )
                 preview_audio_output = gr.Audio(label="Generated Audio")
+                gr.Markdown("**Example Prompts**")
+                with gr.Row():
+                    translate_english_sample_btn = gr.Button("English Sample")
 
     app_mode_input.change(
         switch_app_mode,
@@ -965,14 +928,6 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
             translate_ref_language_input,
         ],
     )
-    translate_mandarin_sample_btn.click(
-        load_translate_mandarin_sample,
-        outputs=[
-            translate_ref_audio_input,
-            translate_ref_text_input,
-            translate_ref_language_input,
-        ],
-    )
     translate_btn.click(
         translate_targets,
         inputs=[
@@ -982,11 +937,11 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
             target_languages_input,
         ],
         outputs=[
-            translate_results_table,
             preview_language_input,
             preview_translated_text,
             preview_audio_output,
             translate_results_state,
+            current_preview_language_state,
             translate_ref_text_input,
         ],
     )
@@ -996,21 +951,33 @@ Stage 1 requires the reference voice to be in one of the 30 supported languages,
             translate_ref_audio_input,
             translate_ref_text_input,
             translate_ref_language_input,
-            translate_results_table,
+            translate_results_state,
+            current_preview_language_state,
+            preview_translated_text,
         ],
         outputs=[
-            translate_results_table,
             preview_language_input,
             preview_translated_text,
             preview_audio_output,
             translate_results_state,
+            current_preview_language_state,
             translate_ref_text_input,
         ],
     )
     preview_language_input.change(
         preview_translate_result,
-        inputs=[translate_results_state, preview_language_input],
-        outputs=[preview_translated_text, preview_audio_output],
+        inputs=[
+            translate_results_state,
+            current_preview_language_state,
+            preview_translated_text,
+            preview_language_input,
+        ],
+        outputs=[
+            preview_translated_text,
+            preview_audio_output,
+            translate_results_state,
+            current_preview_language_state,
+        ],
     )
 
 
