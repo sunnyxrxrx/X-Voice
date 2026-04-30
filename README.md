@@ -88,7 +88,7 @@ Check your ESpeak-ng installation:
 espeak-ng --version
 ```
 
-If not found, run `src/x_voice/prepare_ipa.sh` first.
+If not found, run `bash src/x_voice/prepare_ipa.sh` first.
 
 ## Inference
 
