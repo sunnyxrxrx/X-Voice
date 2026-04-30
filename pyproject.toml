@@ -44,7 +44,7 @@ dependencies = [
     "numpy<=1.26.4; python_version<='3.10'",
     "openai-whisper",
     "phonemizer",
-    "pydantic<=2.10.6",
+    "pydantic>=2.11.10,<=2.12.4",
     "pydub",
     "pyloudnorm",
     "pykakasi",
