@@ -3,7 +3,7 @@
 <a href="https://arxiv.org/abs/unknown" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Paper-Coming%20Soon-b31b1b.svg?logo=arXiv&style=for-the-badge" alt="Paper"></a>
 <a href="https://sunnyxrxrx.github.io/X-Voice-Demo/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Demo-Samples-orange.svg?logo=github&style=for-the-badge" alt="Demo"></a>
 <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
-<a href="unknown" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Online%20Experience-HF%20Space-yellow?labelColor=grey&logo=huggingface&style=for-the-badge" alt="HF Space"></a>
+<a href="https://huggingface.co/spaces/chenxie95/X-Voice" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Online%20Experience-HF%20Space-yellow?labelColor=grey&logo=huggingface&style=for-the-badge" alt="HF Space"></a>
 <a href="https://huggingface.co/datasets/XRXRX/X-Voice-Dataset-Train" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Dataset-Train%20Set-yellow?labelColor=grey&logo=huggingface&style=for-the-badge" alt="HF Dataset"></a>
 <a href="https://huggingface.co/datasets/XRXRX/X-Voice-Testset" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Benchmark-Test%20Set-lightgrey?labelColor=grey&logo=huggingface&style=for-the-badge" alt="HF Benchmark"></a>
 <a href="https://modelscope.cn/datasets/sunnyxrxrx/X-Voice-Dataset-Train" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/ModelScope-Dataset-blue?logo=alibabacloud&style=for-the-badge" alt="ModelScope"></a>
@@ -17,7 +17,7 @@
 
 ## News
 
-- **2026/04/30**: X-Voice <a href="https://github.com/sunnyxrxrx/X-Voice" target="_blank" rel="noopener noreferrer">codebase</a>, <a href="https://huggingface.co/XRXRX/X-Voice" target="_blank" rel="noopener noreferrer">model</a>, <a href="https://sunnyxrxrx.github.io/X-Voice-Demo/" target="_blank" rel="noopener noreferrer">demo</a>, <a href="https://huggingface.co/datasets/XRXRX/X-Voice-Dataset-Train" target="_blank" rel="noopener noreferrer">dataset</a>, and <a href="https://huggingface.co/datasets/XRXRX/X-Voice-Testset" target="_blank" rel="noopener noreferrer">benchmark</a> are released.
+- **2026/04/30**: X-Voice <a href="https://github.com/sunnyxrxrx/X-Voice" target="_blank" rel="noopener noreferrer">codebase</a>, <a href="https://huggingface.co/XRXRX/X-Voice" target="_blank" rel="noopener noreferrer">model</a>, <a href="https://sunnyxrxrx.github.io/X-Voice-Demo/" target="_blank" rel="noopener noreferrer">demo</a>, <a href="https://huggingface.co/spaces/chenxie95/X-Voice" target="_blank" rel="noopener noreferrer">Hugging Face Space</a>, <a href="https://huggingface.co/datasets/XRXRX/X-Voice-Dataset-Train" target="_blank" rel="noopener noreferrer">dataset</a>, and <a href="https://huggingface.co/datasets/XRXRX/X-Voice-Testset" target="_blank" rel="noopener noreferrer">benchmark</a> are released.
 
 ## Installation
 
